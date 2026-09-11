@@ -1,5 +1,13 @@
 # Laravel Zero Storage CLI — Development Task
 
+> **Status: implemented.** This document describes both the original requirements
+> (sections 1–3, 6–30 on mandatory path/directory/transfer semantics) and the
+> current implementation reference (section 4 structure, section 5 contract,
+> sections 5.1–5.10 DTOs/support/services/commands/queue/wizard, sections
+> 31–35 configuration/testing/process/exit codes). Where the original suggestion
+> differs from what was built, the implementation reference sections are
+> authoritative.
+
 ## Project Goal
 
 Build a production-quality CLI application using **Laravel Zero** for managing files and objects across multiple storage backends.
@@ -145,118 +153,642 @@ Commands should primarily:
 
 ---
 
-# 4. Suggested Project Structure
-
-Use a structure similar to:
+# 4. Project Structure
 
 ```text
 app/
 ├── Commands/
-│   ├── ListCommand.php
-│   ├── DownloadCommand.php
-│   ├── UploadCommand.php
+│   ├── Concerns/
+│   │   ├── HandlesStorageErrors.php    — shared option defs, error mapping, result rendering
+│   │   └── PresentsOutput.php          — terminal badges, detail rows, timing
+│   ├── ListCommand.php                 — replaces Symfony's ListCommand (canonical "list")
 │   ├── CopyCommand.php
+│   ├── CopyToCommand.php               — alias of copy
 │   ├── MoveCommand.php
+│   ├── MoveToCommand.php               — alias of move
 │   ├── RenameCommand.php
 │   ├── DuplicateCommand.php
-│   ├── CopyToCommand.php
-│   ├── MoveToCommand.php
 │   ├── DeleteCommand.php
-│   └── VisibilityCommand.php
+│   ├── DownloadCommand.php
+│   ├── UploadCommand.php
+│   ├── VisibilityCommand.php
+│   ├── WizardCommand.php               — interactive wizard (alias: interactive)
+│   ├── RetryCommand.php                — re-dispatch failed queue jobs
+│   ├── RemotesCommand.php              — list rclone remotes (alias: list-remotes)
+│   ├── RemotesAddCommand.php           — add a new rclone remote
+│   ├── RemotesShowCommand.php          — show one remote's config (redacted)
+│   ├── RemotesForgetCommand.php        — delete a remote from rclone config
+│   ├── ConfigsCommand.php              — list saved profiles (alias: list-configs)
+│   ├── ConfigsSaveCommand.php          — save a transfer profile
+│   └── ConfigsForgetCommand.php        — delete a saved profile
 │
 ├── Contracts/
-│   └── StorageDriver.php
+│   ├── StorageDriver.php               — application-level storage semantics
+│   └── RemoteDiscovery.php             — remote/bucket discovery (for cache-testable services)
 │
 ├── Drivers/
-│   ├── RcloneStorageDriver.php
-│   └── LocalStorageDriver.php
+│   ├── RcloneStorageDriver.php         — rclone + AWS CLI subprocesses
+│   └── LocalStorageDriver.php          — pure PHP, operates on absolute paths
 │
 ├── Services/
-│   ├── StorageService.php
-│   ├── TransferService.php
-│   └── FileOperationService.php
+│   ├── StorageService.php              — driver dispatch, list, exists, remotes/buckets
+│   ├── TransferService.php             — copy/move/download/upload orchestration
+│   ├── VisibilityService.php           — visibility/ACL validation + delegation
+│   └── RemoteManager.php               — rclone config CRUD (add/show/forget)
 │
 ├── DTOs/
-│   ├── StoragePath.php
-│   ├── TransferRequest.php
-│   ├── CopyRequest.php
-│   ├── MoveRequest.php
-│   ├── RenameRequest.php
-│   └── VisibilityRequest.php
+│   ├── StoragePath.php                 — immutable value object, parses remote/local paths
+│   ├── StorageLocationType.php         — enum: Remote | Local
+│   ├── TransferOptions.php             — readonly DTO: transfers/retries/dryRun/overwrite/acl/…
+│   ├── TransferResult.php              — readonly DTO: status/copied/skipped/failed/errors
+│   ├── TransferStatus.php              — enum: Success | Partial | Failed
+│   ├── ListingResult.php               — readonly DTO: entries + count/totalSize
+│   └── ListingEntry.php                — readonly DTO: name/path/size/isDirectory/isFile
+│
+├── Exceptions/
+│   ├── StorageException.php            — base (extends RuntimeException)
+│   ├── PathParseException.php
+│   ├── PathValidationException.php
+│   ├── ObjectNotFoundException.php
+│   ├── RemoteNotFoundException.php
+│   ├── BucketNotFoundException.php
+│   ├── TransferException.php
+│   ├── VisibilityException.php
+│   ├── DeleteException.php
+│   └── RenameException.php
+│
+├── Jobs/
+│   └── ProcessTransferJob.php          — queued transfer (dispatched by --queue)
+│
+├── Models/
+│   └── SavedConfig.php                 — saved wizard/config profiles (saved_configs table)
+│
+├── Logging/
+│   └── CreateStorageLogger.php         — Monolog RotatingFileHandler factory
+│
+├── Providers/
+│   └── AppServiceProvider.php          — singleton/bind registrations
 │
 └── Support/
-    ├── Rclone.php
-    ├── Console.php
-    └── Result.php
-```
+    ├── RcloneProcess.php               — safe Symfony Process wrapper (array args, env passthrough)
+    ├── RcloneStats.php                 — JSON log parser (transfers/checks/errors/collapse)
+    ├── ProcessResult.php               — readonly: exitCode/stdout/stderr
+    ├── StorageLogger.php               — Monolog RotatingFileHandler on "storage" channel
+    ├── ExitCode.php                    — constants: SUCCESS/FAILURE/INVALID/SOURCE_NOT_FOUND/…
+    ├── SizeFormatter.php               — bytes → B/K/M/G/T/P
+    └── DurationFormatter.php           — seconds → ms/s/m/h
 
-You may adjust this structure if there is a better Laravel Zero architecture, but keep the same separation of concerns.
+config/
+├── storage.php                         — driver, logging, defaults, cache, visibility mapping
+├── commands.php                        — default command, hidden/removed framework commands
+├── app.php                             — name, version, providers
+├── database.php, queue.php, cache.php, logging.php — standard Laravel config
+```
 
 ---
 
 # 5. StorageDriver Contract
 
-Create a storage abstraction.
-
-Example:
+The `StorageDriver` interface represents **application-level storage semantics**, not rclone-specific semantics. All path parameters are validated `StoragePath` value objects. Backend-specific translation (e.g. rclone trailing-slash rules, S3 ACL naming) belongs in the implementation, never in the command or service layer.
 
 ```php
 interface StorageDriver
 {
-    public function list(string $path, bool $recursive = false): array;
+    public function name(): string;
 
-    public function exists(string $path): bool;
+    /** Whether the configured backend is available (e.g. binary present). */
+    public function isAvailable(): bool;
 
-    public function download(
-        string $source,
-        string $destination
-    ): void;
+    /** List the contents of a path (directory/prefix). Directories and files
+     *  can be filtered independently. */
+    public function list(StoragePath $path, bool $recursive = false,
+        bool $directories = true, bool $files = true): ListingResult;
 
-    public function upload(
-        string $source,
-        string $destination
-    ): void;
+    /** Whether an object/file/prefix exists at the given path. */
+    public function exists(StoragePath $path): bool;
 
-    public function copy(
-        string $source,
-        string $destination
-    ): void;
+    /** Remote → Local fetch of a single object, prefix, or bucket. */
+    public function download(StoragePath $source, StoragePath $destination,
+        TransferOptions $options = new TransferOptions): TransferResult;
 
-    public function move(
-        string $source,
-        string $destination
-    ): void;
+    /** Local → Remote push of a single object, directory, or bucket. */
+    public function upload(StoragePath $source, StoragePath $destination,
+        TransferOptions $options = new TransferOptions): TransferResult;
 
-    public function rename(
-        string $source,
-        string $destination
-    ): void;
+    /** Copy a single object/prefix from one location to another. */
+    public function copy(StoragePath $source, StoragePath $destination,
+        TransferOptions $options = new TransferOptions): TransferResult;
 
-    public function delete(string $path): void;
+    /** Move a single object/prefix from one location to another. */
+    public function move(StoragePath $source, StoragePath $destination,
+        TransferOptions $options = new TransferOptions): TransferResult;
 
-    public function visibility(
-        string $path,
-        string $visibility
-    ): void;
+    /** Rename a single object/prefix within the same location. */
+    public function rename(StoragePath $source, StoragePath $destination,
+        TransferOptions $options = new TransferOptions): TransferResult;
+
+    /** Delete an object or the contents of a prefix. */
+    public function delete(StoragePath $path,
+        TransferOptions $options = new TransferOptions): TransferResult;
+
+    /** Set the visibility (ACL) of an object, or recursively of all objects
+     *  under a prefix. */
+    public function visibility(StoragePath $path, string $visibility,
+        TransferOptions $options = new TransferOptions): TransferResult;
 }
 ```
 
-Do not blindly copy this interface if a better abstraction is required.
+The companion `RemoteDiscovery` interface is implemented by `RcloneStorageDriver` and consumed by `StorageService` for cache-testable remote/bucket discovery:
 
-Think about:
+```php
+interface RemoteDiscovery
+{
+    public function remotes(): array;
+    public function buckets(string $remote): array;
+}
+```
 
-* files vs directories
-* remote vs local paths
-* metadata
-* recursive operations
-* streaming
-* errors
-* progress
-* visibility
-* atomicity
-* partial operations
+### Implementation Notes
 
-The contract should represent **application-level storage semantics**, not rclone-specific semantics.
+* **`RcloneStorageDriver`** — subprocess-based (rclone for transfers, AWS CLI `s3api put-object-acl` for visibility). `exists()` must check for **non-empty** `lsf` output, not exit status (rclone exits 0 with empty stdout for non-existent keys). `list()` on a remote raises `ObjectNotFoundException` (exit 3) when the listing is empty and the path is not a bucket root.
+* **`LocalStorageDriver`** — pure PHP, operates on absolute paths (cwd-relative for relative input). Visibility maps to `chmod` (755/644 for public, 700/600 for private).
+* Both drivers are **not** singletons (the provider uses `bind`); memoised `isAvailable()`/`remotes()` last one command. Call `flushRemotes()` after changing the rclone config.
+
+---
+
+# 5.1 Data Transfer Objects
+
+All DTOs live in `app/DTOs/` and are `final readonly` (or `final class` for mutable value objects).
+
+### StoragePath (Immutable Value Object)
+
+Parses and normalizes canonical storage paths. Private constructor; created via `fromString()`, `fromRemote()`, or `fromLocal()`.
+
+```php
+final class StoragePath
+{
+    public static function fromString(string $value): self;   // parse user input
+    public static function fromRemote(string $remote, ?string $bucket, ?string $path): self;
+    public static function fromLocal(string $path): self;
+
+    public function type(): StorageLocationType;               // Remote | Local
+    public function isRemote(): bool;
+    public function isLocal(): bool;
+    public function remote(): ?string;
+    public function bucket(): ?string;
+    public function path(): ?string;                           // null = bucket root
+    public function isDirectory(): bool;                       // trailing slash
+    public function isFile(): bool;
+    public function isPrefix(): bool;                          // remote + directory + not bucket root
+    public function isBucketRoot(): bool;                      // remote:bucket with no path
+    public function filename(): ?string;                       // basename of path
+    public function toRclonePath(): string;                    // "remote:bucket/path"
+    public function toDisplayString(): string;                 // same as toRclonePath()
+    public function asDirectory(): self;                       // return copy marked as directory
+    public function child(string $segment): self;              // build child path
+}
+```
+
+Parsing rules:
+* `remote:bucket/path` → Remote type, splits on first `/` after `:`
+* `/absolute/path` → Local type
+* `./relative` or `~/path` → Local type (home expanded)
+* `local:/path` → explicit Local type
+* Trailing `/` → `isDirectory() = true`
+* Empty string → throws `PathParseException`
+
+### StorageLocationType
+
+```php
+enum StorageLocationType: string {
+    case Remote = 'remote';
+    case Local  = 'local';
+}
+```
+
+### TransferOptions (Readonly DTO)
+
+```php
+final readonly class TransferOptions
+{
+    public function __construct(
+        public int     $transfers = 8,
+        public int     $retries   = 3,
+        public bool    $dryRun    = false,
+        public bool    $verbose   = false,
+        public bool    $overwrite = false,
+        public bool    $recursive = false,
+        public bool    $progress  = false,
+        public ?string $acl       = null,   // null = inherit remote's own ACL
+    ) {}
+}
+```
+
+### TransferResult (Readonly DTO)
+
+```php
+final readonly class TransferResult
+{
+    public function __construct(
+        public TransferStatus  $status,
+        public int             $copied = 0,
+        public int             $skipped = 0,
+        public int             $failed = 0,
+        public array           $errors = [],     // array<int, string>
+        public ?StoragePath    $source = null,
+        public ?StoragePath    $destination = null,
+    ) {}
+
+    public static function success(...): self;
+    public function total(): int;                 // copied + skipped + failed
+}
+```
+
+### TransferStatus (Enum)
+
+```php
+enum TransferStatus: string {
+    case Success = 'success';
+    case Partial = 'partial';
+    case Failed  = 'failed';
+}
+```
+
+### ListingResult / ListingEntry
+
+```php
+final readonly class ListingResult
+{
+    public function __construct(public array $entries = []) {}  // array<ListingEntry>
+    public function count(): int;
+    public function totalSize(): int;
+}
+
+final readonly class ListingEntry
+{
+    public function __construct(
+        public string $name,
+        public string $path,
+        public int    $size = 0,
+        public bool   $isDirectory = false,
+        public bool   $isFile = false,
+    ) {}
+}
+```
+
+---
+
+# 5.2 Support Classes
+
+All in `app/Support/`.
+
+### RcloneProcess
+
+Safe process execution wrapper. **Intentionally not final** — tests extend it with a stub.
+
+```php
+class RcloneProcess
+{
+    public function __construct(string $binary = 'rclone', int $timeout = 3600);
+
+    public function run(array $arguments, ?callable $onOutput = null): ProcessResult;
+}
+```
+
+Passes `env: getenv()` explicitly (Symfony Process only inherits variables in both `getenv()` and `$_SERVER`; variables set via `putenv()` alone like `RCLONE_CONFIG` are silently dropped otherwise).
+
+### RcloneStats (Readonly DTO)
+
+Parses the JSON log emitted by rclone on stderr (launched with `--use-json-log --stats=1s --stats-one-line --stats-log-level NOTICE`).
+
+```php
+final readonly class RcloneStats
+{
+    public function __construct(
+        public bool   $present = false,
+        public int    $transfers = 0,
+        public int    $checks = 0,
+        public int    $errors = 0,
+        public int    $deletes = 0,
+        public int    $bytes = 0,
+        public int    $totalBytes = 0,
+        public float  $elapsed = 0.0,
+        public array  $errorMessages = [],  // collapsed/deduped
+    ) {}
+
+    public static function parse(string $output): self;
+    public function progress(): ?float;     // 0.0–1.0 or null
+}
+```
+
+Error collapsing: `RequestID`/`HostID` stripped, `Attempt N/M failed` summaries dropped, identical failures grouped with count and one example key. At most 5 errors shown inline; rest in log.
+
+### ProcessResult (Readonly)
+
+```php
+final readonly class ProcessResult
+{
+    public function __construct(
+        public int    $exitCode,
+        public string $stdout,
+        public string $stderr,
+    ) {}
+
+    public function successful(): bool;
+    public function failed(): bool;
+    public function combine(): string;     // stdout + stderr
+}
+```
+
+### StorageLogger
+
+Monolog `RotatingFileHandler` on the custom `storage` channel. Per-directory loggers are cached.
+
+```php
+final class StorageLogger
+{
+    public function directory(string $subdir): self;
+    public function log(string $level, string $message, array $context = []): void;
+    public function info(string $message, array $context = []): void;
+    public function warning(string $message, array $context = []): void;
+    public function error(string $message, array $context = []): void;
+    public static function expandHome(string $path): string;
+}
+```
+
+Logs operation metadata only — never credentials, access keys, secret keys, or tokens.
+
+### ExitCode
+
+```php
+final class ExitCode
+{
+    public const SUCCESS          = 0;
+    public const FAILURE          = 1;
+    public const INVALID          = 2;   // path parse / validation errors
+    public const SOURCE_NOT_FOUND = 3;   // object/remote/bucket not found
+    public const DESTINATION      = 4;
+    public const VISIBILITY       = 5;
+    public const PARTIAL          = 6;   // some objects failed
+}
+```
+
+### SizeFormatter / DurationFormatter
+
+```php
+final class SizeFormatter    { public static function human(int $bytes): string; }    // B/K/M/G/T/P
+final class DurationFormatter { public static function human(float $seconds): string; } // ms/s/m/h
+```
+
+---
+
+# 5.3 Services
+
+### StorageService (Singleton)
+
+Driver dispatch, listing, existence checks, and cached remote/bucket discovery.
+
+```php
+class StorageService  // not final — tests use Mockery
+{
+    public function __construct(
+        RemoteDiscovery       $rclone,
+        LocalStorageDriver    $local,
+        ?Repository           $cache = null,
+        int                   $cacheTtl = 300,
+    );
+
+    public function driverFor(StoragePath $path): StorageDriver;
+    public function list(StoragePath $path, bool $recursive = false, string $type = 'all'): ListingResult;
+    public function exists(StoragePath $path): bool;
+    public function remotes(): array;                     // cached
+    public function buckets(string $remote): array;       // cached
+}
+```
+
+Cache: optional `Repository` with configurable TTL (`storage.cache.ttl`, 0 disables). `driverFor()` dispatches by `StorageLocationType`.
+
+### TransferService (Singleton)
+
+Orchestrates transfer semantics. Not final (jobs mock it).
+
+```php
+class TransferService
+{
+    public function __construct(StorageService $storage, RcloneStorageDriver $rclone, LocalStorageDriver $local);
+
+    public function copy(StoragePath $source, StoragePath $destination, TransferOptions $options = new TransferOptions): TransferResult;
+    public function download(...): TransferResult;    // delegates to copy
+    public function upload(...): TransferResult;      // delegates to copy
+    public function move(StoragePath $source, StoragePath $destination, TransferOptions $options = new TransferOptions): TransferResult;
+    public function reportProgress(?callable $handler): void;
+    public function transferDriver(StoragePath $source, StoragePath $destination): StorageDriver;
+}
+```
+
+Key semantics:
+* Directory copy = copy CONTENTS into destination prefix, preserving relative structure. Source dir name is NOT appended.
+* `transferDriver()`: both local → `LocalStorageDriver`, otherwise → `RcloneStorageDriver`.
+* `move()` with remote end: delegates to `RcloneStorageDriver::move()` (single rclone process with `move`/`moveto` + `--delete-empty-src-dirs`). The per-object loop in `TransferService::move()` is only for **local↔local**.
+* `--dry-run` short-circuits via `expectedCounts()` before any write/mkdir.
+
+### VisibilityService (Singleton)
+
+```php
+class VisibilityService  // not final
+{
+    public function __construct(StorageService $storage);
+
+    public function apply(StoragePath $path, string $visibility, TransferOptions $options = new TransferOptions): TransferResult;
+}
+```
+
+Validates visibility against the config map plus `private`/`public`/`public-read`/`public-read-write`/`authenticated-read`. Throws `PathValidationException` for disallowed values.
+
+### RemoteManager (Final)
+
+```php
+final class RemoteManager
+{
+    public function list(): array;
+    public function add(string $name, string $type, array $config): void;
+    public function show(string $name): string;
+    public function forget(string $name): void;
+}
+```
+
+Shells out to `rclone listremotes` / `config create` / `config show` / `config delete`. Secret-looking keys (`pass|secret|token|access_key`) are redacted in `show()` output. Credentials are never stored or logged by the application.
+
+---
+
+# 5.4 Command Traits
+
+### PresentsOutput (`app/Commands/Concerns/PresentsOutput.php`)
+
+Single source of CLI styling. Used by all commands (directly or via `HandlesStorageErrors`).
+
+```php
+trait PresentsOutput
+{
+    protected function renderOperationHeader(string $title, bool $dryRun = false): void;
+    protected function renderDetail(string $label, string $value): void;   // label padded to 13 cols
+    protected function renderSeparator(int $width = 56): void;
+    protected function renderSuccess(string $message): void;               // green badge
+    protected function renderFailed(string $message): void;                // red badge
+    protected function renderPartial(string $message): void;               // yellow badge
+    protected function renderDryRun(string $message): void;                // yellow badge
+    protected function renderInfo(string $message): void;                  // blue badge
+    protected function renderError(string $message): void;                 // red ✖, only error style
+    protected function renderHint(string $message): void;                  // gray
+    protected function elapsed(): ?string;                                 // DurationFormatter
+}
+```
+
+### HandlesStorageErrors (`app/Commands/Concerns/HandlesStorageErrors.php`)
+
+Used by all transfer/delete/visibility commands. Uses `PresentsOutput`.
+
+```php
+trait HandlesStorageErrors
+{
+    use PresentsOutput;
+
+    protected function addTransferOptions(): void;
+    protected function addQueueOption(): void;
+    protected function transferOptions(): TransferOptions;
+    protected function maybeQueueOperation(string $operation, StoragePath $source, StoragePath $destination, TransferOptions $options, array $extra = []): ?int;
+    protected function exitCodeFor(\Throwable $exception): int;
+    protected function reportException(\Throwable $exception): int;
+    protected function renderTransfer(TransferResult $result, string $pastVerb, string $pluralVerb, bool $dryRun = false): int;
+    protected function renderErrorList(array $errors, int $limit = 5): void;
+    protected function trackProgress(TransferService $transfers, TransferOptions $options): void;
+    protected function clearProgress(): void;
+    protected function describeLocations(StoragePath $source, StoragePath $destination, string $operation, bool $dryRun): void;
+}
+```
+
+Transfer option defaults come from `config('storage.defaults')` and are set as Symfony option defaults in `addTransferOptions()` — the queued payload and option resolution always carry concrete values (or explicit `null` for ACL = "inherit remote's own ACL").
+
+---
+
+# 5.5 All Commands
+
+| Command | Name / Aliases | Description |
+|---------|----------------|-------------|
+| `ListCommand` | `list` | List objects/dirs. `--type all/dirs/files`, `--recursive` (`-R`), `--sort-dir`/`--sort-file` (asc/desc/size/size-desc). SUMMARY line with counts + total size. |
+| `CopyCommand` | `copy` | Non-destructive copy. `--transfers/--retries/--dry-run/--overwrite/--progress/--acl/--queue`. |
+| `CopyToCommand` | `copy-to` | Alias of copy (queues as `'copy'`). |
+| `MoveCommand` | `move` | copy → verify → delete source. Same options as copy. |
+| `MoveToCommand` | `move-to` | Alias of move (queues as `'move'`). |
+| `RenameCommand` | `rename` | Rename/relocate. Delegates to `TransferService::move()`. |
+| `DuplicateCommand` | `duplicate` | Non-destructive copy (source preserved). Delegates to `TransferService::copy()`. |
+| `DeleteCommand` | `delete` | Delete object/prefix. Confirms unless `--force`/`--dry-run`. Shows scope (count + size). |
+| `DownloadCommand` | `download` | Remote → local. Same options as copy. |
+| `UploadCommand` | `upload` | Local → remote. Same options as copy. |
+| `VisibilityCommand` | `visibility` | Set object/prefix visibility. `--dry-run/--verbose/--recursive`. |
+| `WizardCommand` | `wizard` / `interactive` | Interactive wizard. `--config` (preload profile), `--save-as` (store profile). |
+| `RetryCommand` | `retry` | Re-dispatch failed queue jobs by ID or `all`. Exits 1 if nothing matched. |
+| `RemotesCommand` | `remotes` / `list-remotes` | Table of configured rclone remotes. |
+| `RemotesAddCommand` | `remotes:add` | Add rclone remote. Validates name/type + KEY=VALUE. |
+| `RemotesShowCommand` | `remotes:show` | Print redacted remote config. |
+| `RemotesForgetCommand` | `remotes:forget` | Delete rclone remote. Confirms unless `--force`. |
+| `ConfigsCommand` | `configs` / `list-configs` | Table of saved profiles. |
+| `ConfigsSaveCommand` | `configs:save` | Save a transfer profile. |
+| `ConfigsForgetCommand` | `configs:forget` | Delete a saved profile by name. |
+
+---
+
+# 5.6 Queue System
+
+### ProcessTransferJob (`app/Jobs/ProcessTransferJob.php`)
+
+Dispatched by `--queue` on transfer commands. `ShouldQueue`, `tries = 3`.
+
+```php
+class ProcessTransferJob implements ShouldQueue
+{
+    public function __construct(
+        public readonly string  $operation,     // copy|move|download|upload|delete|visibility
+        public readonly string  $source,        // rclone path string
+        public readonly ?string $destination,
+        public readonly array   $options,       // TransferOptions keys
+    ) {}
+
+    public function handle(): void;
+    // Rebuilds TransferOptions from payload only — never reads config().
+}
+```
+
+Operation mapping: `copy`/`duplicate` → `TransferService::copy()`, `move`/`rename` → `move()`, `download` → `download()`, `upload` → `upload()`, `delete` → driver `delete()`, `visibility` → `VisibilityService::apply()`.
+
+When `result->failed > 0`, the job throws so it lands in `failed_jobs` and can be re-dispatched via `retry`.
+
+Queue flow: `QUEUE_CONNECTION=database <entry> copy <src> <dst> --queue` → `<entry> queue:work database --stop-when-empty --tries=1` → `<entry> retry <id>` → `queue:work` again. Under the default `sync` connection, `--queue` runs inline (still prints "Queued").
+
+---
+
+# 5.7 Wizard Flow
+
+`WizardCommand` drives an interactive prompt sequence:
+
+1. **Load profile** (optional) — `--config=<name>` loads a `SavedConfig` row; missing → exit 3.
+2. **Select storage** — remotes from `StorageService::remotes()` plus `'local'`. Default from profile if available.
+3. **Root selection:**
+   - Local → `Local working directory` (default: profile source or `getcwd()`/`HOME`).
+   - Remote → `Select bucket` (choice from `buckets()` with `<enter bucket manually>` sentinel); empty or manual → `Bucket name` (ask). Root = `storage:bucket`.
+4. **Select operation** — List, Download, Upload, Copy, Move, Rename, Duplicate, Copy To, Move To, Visibility, Delete.
+5. **Operation-specific prompts:**
+   - List: `Source path` (default root).
+   - Transfers: `Source path` → `Destination path` → `Overwrite?` → `Dry run?` → `Show live progress?` → `Plan: ...` → `Run operation?`.
+   - Visibility: `Object path` → `Visibility` (private/public).
+   - Delete: `Path to delete` → delete command's own confirmation.
+6. **Save profile** (optional) — `--save-as=<name>` upserts a `SavedConfig` row.
+
+Paths resolved via `resolveAgainstRoot()` — absolute `/` or `remote:bucket/...` pass through; otherwise root is prepended. Delegates via `$this->call(<command>, [...])`.
+
+---
+
+# 5.8 ACL Handling
+
+ACL precedence: `--acl` CLI option → `storage.defaults.acl` (`STORAGE_DEFAULT_ACL`) → destination remote's own `acl` config → rclone's default.
+
+`RcloneStorageDriver::aclFlags()`:
+1. If `TransferOptions::$acl` is set, map through `config('storage.visibility')` → `--acl=<canned>` or `--s3-acl=<explicit>`.
+2. If absent, read the destination remote's own `acl` key (memoised via `rclone config show`).
+3. Canned S3 ACLs passed as `--acl=<value>`. Non-canned values mapped into `--s3-acl=`.
+4. Unmappable value → `TransferException` **before** anything is transferred.
+
+Only the destination remote is consulted — a local destination performs no S3 write.
+
+---
+
+# 5.9 Runtime Quirks
+
+* **No-overwrite by default.** All transfer commands use `--ignore-existing` unless `--overwrite`.
+* **Any transfer with a remote end runs as ONE rclone process.** Never reintroduce a per-object loop — it spawned ~10 subprocesses per object.
+* **Counts come from rclone, never from a prediction.** `RcloneStats::parse()` reads the last `stats` object off stderr. Only `--dry-run` uses `TransferService::expectedCounts()`.
+* **`exists()` checks non-empty output, not exit status.** `rclone lsf` exits 0 with empty stdout for non-existent keys.
+* **`list()` raises `ObjectNotFoundException`** (exit 3) when the listing is empty and not a bucket root.
+* **Nothing to do renders an INFO badge**, never DRY RUN.
+* **`--progress` does NOT pass `--progress` to rclone.** Commands call `trackProgress()` which uses `\r` line redrawing from parsed `RcloneStats`.
+* **Test seam:** `FakeRcloneProcess` extends `RcloneProcess` to stub subprocess calls.
+* **Subprocess env inheritance:** `RcloneProcess::run()` passes `env: getenv()` explicitly.
+* **Memoised remotes:** `isAvailable()`/`remotes()` last one command instance; call `flushRemotes()` after config changes.
+
+---
+
+# 5.10 Build & Entry Point
+
+```bash
+# Development
+php storage-manage-cli <command>
+
+# Build phar
+php storage-manage-cli app:build storage
+# → builds/storage
+```
+
+Default command is `list`. Framework `ListCommand` + `SummaryCommand` are removed via `config/commands.php`.
 
 ---
 
@@ -1669,16 +2201,15 @@ Dry-run must never modify storage.
 
 # 30. Progress
 
-Large transfers should show useful progress.
+Large transfers show live progress via `--progress` on transfer commands. The CLI does **not** pass `--progress` to rclone (its ANSI bar needs a TTY and collides with the JSON log). Instead:
 
-Preserve legacy configuration concepts:
+1. `--progress` flag sets `TransferOptions::$progress = true`.
+2. `HandlesStorageErrors::trackProgress()` registers a handler via `TransferService::reportProgress()` → `RcloneStorageDriver::onProgress()`.
+3. The driver feeds parsed `RcloneStats` per stats line.
+4. The trait redraws a single `\r` line with bytes/total/percent/transfers/elapsed, cleared by `clearProgress()` before result output.
+5. Only rendered when the output is decorated (interactive terminal).
 
-```text
---transfers
---retries
-```
-
-Example:
+Transfer concurrency and retry are configured via `--transfers` and `--retries`:
 
 ```bash
 storage copy \
@@ -1688,180 +2219,138 @@ storage copy \
     --retries=5
 ```
 
-Use rclone's progress capabilities where appropriate.
-
-Do not recreate a transfer engine inside PHP if rclone already handles it reliably.
-
-Laravel Zero is the orchestration/UI layer.
-
-Rclone remains the initial transfer engine.
+Defaults come from `config('storage.defaults')` (env `STORAGE_DEFAULT_TRANSFERS` / `STORAGE_DEFAULT_RETRIES`).
 
 ---
 
 # 31. Configuration
 
-Create Laravel-style configuration.
+### `config/storage.php`
 
-For example:
-
-```text
-config/storage.php
-```
-
-Example:
+All values are env-driven (`STORAGE_*`; see `.env.example`).
 
 ```php
 return [
-    'default_driver' => 'rclone',
+    'default_driver' => env('STORAGE_DEFAULT_DRIVER', 'rclone'),
 
     'drivers' => [
         'rclone' => [
-            'binary' => 'rclone',
+            'binary'   => env('STORAGE_RCLONE_BINARY', 'rclone'),
+            'timeout'  => (int) env('STORAGE_RCLONE_TIMEOUT', 3600),
         ],
     ],
 
     'logs' => [
-        'path' => '~/.config/storage-cli/logs',
+        'path'      => env('STORAGE_LOG_PATH', '~/.config/storage-cli/logs'),
+        'max_files' => (int) env('STORAGE_LOG_MAX_FILES', 14),
+        'level'     => env('STORAGE_LOG_LEVEL', 'info'),
+    ],
+
+    'defaults' => [
+        'transfers'  => (int) env('STORAGE_DEFAULT_TRANSFERS', 8),
+        'retries'    => (int) env('STORAGE_DEFAULT_RETRIES', 3),
+        'overwrite'  => (bool) env('STORAGE_OVERWRITE', false),
+        'recursive'  => (bool) env('STORAGE_RECURSIVE', false),
+        'acl'        => env('STORAGE_DEFAULT_ACL') ?: null,
+    ],
+
+    'cache' => [
+        'ttl' => (int) env('STORAGE_CACHE_TTL', 300),
+    ],
+
+    'visibility' => [
+        'private'              => 'private',
+        'public'               => 'public-read',
+        'public-read-write'    => 'public-read-write',
+        'authenticated-read'   => 'authenticated-read',
     ],
 ];
 ```
 
-Do not store secrets in source code.
+### `config/commands.php`
 
-Do not duplicate credentials already managed by rclone.
+```php
+return [
+    'default' => App\Commands\ListCommand::class,
+    'paths'   => [app_path('Commands')],
+    'hidden'  => [/* framework commands: DumpCompletion, Help, Schedule*, VendorPublish, StubPublish */],
+    'remove'  => [
+        Symfony\Component\Console\Command\ListCommand::class,   // app's list owns the name
+        NunoMaduro\LaravelConsoleSummary\SummaryCommand::class,
+    ],
+];
+```
+
+Do not store secrets in source code. Do not duplicate credentials already managed by rclone.
 
 ---
 
 # 32. Process Execution
 
-Create a dedicated process execution abstraction where appropriate.
-
-Use Symfony Process or an equivalent safe process abstraction.
-
-Prefer:
+`App\Support\RcloneProcess` wraps Symfony Process with array-arg execution:
 
 ```php
-Process::run([
-    'rclone',
-    'copy',
-    $source,
-    $destination,
-]);
+class RcloneProcess  // intentionally not final — tests extend with FakeRcloneProcess
+{
+    public function run(array $arguments, ?callable $onOutput = null): ProcessResult;
+}
 ```
 
-Do NOT use unsafe shell interpolation:
-
-```php
-shell_exec("rclone copy {$source} {$destination}");
-```
-
-Arguments must be passed separately.
-
-The process abstraction should support:
-
-* exit code
-* stdout
-* stderr
-* timeout
-* retries where appropriate
-* dry-run
-* verbose diagnostics
+* Arguments are always passed as an array — **no** `shell_exec()` or string interpolation.
+* `env: getenv()` is passed explicitly (Symfony Process drops `putenv()`-only vars like `RCLONE_CONFIG`).
+* Default timeout: 3600s (configurable via `storage.drivers.rclone.timeout`).
+* `$onOutput` callback receives each line as it's written — used for live progress stats.
 
 ---
 
 # 33. Testing
 
-Use PHPUnit or Pest if compatible with the Laravel Zero version.
+**Framework:** Pest v4 (PHPUnit-compatible). **One entry:** `./vendor/bin/pest`.
 
-## Unit Tests
-
-Test:
-
-* StoragePath parsing
-* StoragePath normalization
-* local path detection
-* remote path detection
-* bucket root detection
-* prefix/directory detection
-* filename extraction
-* command argument validation
-* visibility mapping
-* DTOs
-* service behavior
-* error handling
-* directory relative-path calculation
-* conflict handling
-* partial-operation behavior
-
-## Integration Tests
-
-Mock/fake the storage driver where possible.
-
-Test:
+### Test Structure
 
 ```text
-copy
-move
-rename
-duplicate
-copy-to
-move-to
-delete
-visibility
-download
-upload
-list
+tests/
+├── TestCase.php                          — abstract, extends LaravelZero\Framework\Testing\TestCase
+├── Pest.php                              — uses(TestCase)->in('Feature'), helpers
+├── Feature/
+│   ├── CopyCommandTest.php               — dir copy, file copy, skip/overwrite, dry-run, missing source
+│   ├── CopyToCommandTest.php             — alias semantics
+│   ├── MoveCommandTest.php               — move + delete source, skip, partial (chmod 555)
+│   ├── MoveToCommandTest.php             — alias semantics
+│   ├── RenameCommandTest.php             — file rename, prefix rename, skip, dry-run
+│   ├── DuplicateCommandTest.php          — file/prefix duplicate, skip, dry-run
+│   ├── DeleteCommandTest.php             — force delete, dry-run, declines confirmation, empty dir
+│   ├── DownloadCommandTest.php           — dir→local, file→file, dry-run
+│   ├── UploadCommandTest.php             — local→local, skip, dry-run
+│   ├── VisibilityCommandTest.php         — public/private modes, dry-run, invalid value
+│   ├── ListCommandTest.php               — local listing, recursive, --type, missing path
+│   ├── WizardCommandTest.php             — list/copy flows, abort, dry-run, delete deferral
+│   ├── TransferOptionDefaultsTest.php    --acl/--transfers/--retries defaults from config
+│   └── RemotesCommandsTest.php           — add/show/forget with temp RCLONE_CONFIG
+├── Unit/
+│   ├── StoragePathTest.php               — parsing, normalization, child, asDirectory, errors
+│   ├── LocalStorageDriverTest.php        — full driver coverage (list/copy/move/delete/visibility)
+│   ├── RcloneStorageDriverTest.php       — FakeRcloneProcess stubs; exists/copy/move/ACL
+│   ├── StorageServiceTest.php            — driver dispatch, list, exists, cache TTL
+│   ├── RcloneProcessTest.php             — array args, no shell interpolation
+│   ├── RcloneStatsTest.php               — JSON parsing, collapse, dedup, error lines
+│   ├── SizeFormatterTest.php             — B→P rendering, saturation
+│   ├── DurationFormatterTest.php         — ms/s/m/h
+│   ├── StorageLoggerTest.php             — writes to configured dir, rotating files
+│   └── ProcessTransferJobTest.php        — queued copy runs transfer; failures throw
 ```
 
-## Directory Acceptance Tests
+### Key Testing Conventions
 
-At minimum test:
-
-```text
-source:
-remote:bucket/src/
-
-files:
-src/a.txt
-src/b.txt
-src/nested/c.txt
-
-destination:
-remote2:bucket/dst/
-```
-
-Expected:
-
-```text
-remote2:bucket/dst/a.txt
-remote2:bucket/dst/b.txt
-remote2:bucket/dst/nested/c.txt
-```
-
-NOT:
-
-```text
-remote2:bucket/dst/src/a.txt
-```
-
-unless explicitly requested.
-
-Also test:
-
-```text
-file → file
-file → directory
-directory → directory
-directory → new directory
-directory → existing directory
-empty directory
-remote → remote
-remote → local
-local → remote
-local → local
-```
-
-Do NOT make real destructive operations against production storage during automated tests.
+* **Pest shares one process across all suites** — top-level helper function names collide across files. Every helper must be unique per file (e.g. `remove_tree_lsd`, `rmtree_ct`, `wizard_fixture`). Never define a bare `remove_tree()`.
+* **`expectsOutputToContain()` matches whole formatted lines** — expect per-line, not across multi-line output. Two expectations matching the same line will fail the second.
+* **After `Artisan::call()`, capture output once** — `$out = Artisan::output()`. Repeated calls return empty.
+* **The `artisan()` PendingCommand emulator** throws `NoMatchingExpectationException` on unregistered prompts. For flows without `expectsQuestion`, use `Artisan::call()` + `Artisan::output()`.
+* **Pest ignores PHP `@` suppression** — stray warnings surface. Guard fixture cleanup with `is_dir()` checks.
+* **Remote-flow tests** define throwaway `local`-backend remotes via `RCLONE_CONFIG` temp files; require `rclone` on PATH. Never let them touch `~/.config/rclone/rclone.conf`.
+* **Real S3/Spaces buckets** enforce bucket-owner ACLs; direct visibility/ACL writes fail. Scope visibility coverage to `LocalStorageDriver`.
+* **Manual smoke:** `php storage-manage-cli`; interactive commands need piped stdin (e.g. `script -q /dev/null php storage-manage-cli wizard`).
 
 ---
 
@@ -1898,23 +2387,19 @@ Every command should have:
 
 # 35. Exit Codes
 
-Use meaningful exit codes.
-
-At minimum:
+Defined in `app/Support/ExitCode.php`:
 
 ```text
 0 = success
-1 = general failure
-2 = invalid arguments
-3 = source not found
+1 = general failure (or transfer failure)
+2 = invalid arguments / path parse error / path validation error
+3 = source not found (object, remote, or bucket)
 4 = destination error
-5 = permission/visibility error
-6 = partial operation
+5 = visibility / ACL error
+6 = partial operation (some objects failed)
 ```
 
-Do not force these exact values if Symfony Console/Laravel Zero has a better established convention.
-
-The important requirement is predictable behavior.
+Commands map exceptions through `HandlesStorageErrors::exitCodeFor()` / `reportException()` rather than hard-coding a code per catch block. `retry` with IDs that match nothing exits 1, not 0.
 
 ---
 
@@ -2218,54 +2703,80 @@ Avoid:
 
 # 40. Final Architecture
 
-The final application should feel like a professional CLI storage manager, not a PHP version of a Bash script.
-
-Target architecture:
-
 ```text
-                    ┌──────────────────────┐
-                    │    Laravel Zero CLI  │
-                    └──────────┬───────────┘
-                               │
-                         Commands
-                               │
-                               ▼
+                        ┌───────────────────────────┐
+                        │   Laravel Zero 13 CLI     │
+                        │   PHP ^8.3 · Pest v4      │
+                        │   Entry: storage-manage-cli│
+                        └───────────┬───────────────┘
+                                    │
+                              Commands (20)
+                                    │
+                    ┌───────────────┼───────────────┐
+                    │               │               │
+              Transfer cmds    Remote cmds    Config/Wizard cmds
+              (copy/move/      (remotes       (configs:save/
+               delete/etc.)    add/show/      forget, wizard)
+                    │          forget)
+                    │               │
+            ┌───────┴───────┐       │
+            │               │       │
+       PresentsOutput  HandlesStorageErrors
+            │               │
+            ▼               ▼
                     Application Services
-                               │
-                               ▼
-                    StorageDriver Contract
-                               │
-             ┌─────────────────┼─────────────────┐
-             │                 │                 │
-             ▼                 ▼                 ▼
-       Rclone Driver      S3 Driver        Local Driver
-             │                 │                 │
-             ▼                 ▼                 ▼
-          rclone          S3 API          Local FS
-             │
-       ┌─────┼──────────────┐
-       ▼     ▼              ▼
-      DO    AWS             R2
-    Spaces
+                    ┌───────┴────────┐
+                    │                │
+              TransferService   StorageService
+              VisibilityService  RemoteManager
+                    │                │
+                    ▼                ▼
+              StorageDriver Contract    RemoteDiscovery
+                    │
+        ┌───────────┼───────────┐
+        │           │           │
+        ▼           ▼           ▼
+  RcloneDriver  LocalDriver   (future)
+        │           │
+        ▼           ▼
+    rclone CLI    PHP filesystem
+    AWS CLI       (chmod for
+    (s3api)        visibility)
+        │
+  ┌─────┼──────────┐
+  ▼     ▼          ▼
+ DO    AWS        R2
+Spaces S3     (via rclone)
 ```
 
-The CLI should provide:
+### Provider Bindings (`AppServiceProvider`)
 
 ```text
-List
-Download
-Upload
-Copy
-Move
-Rename
-Duplicate
-Copy To
-Move To
-Visibility
-Delete
+singleton: StorageLogger, RcloneProcess, StorageService, TransferService, VisibilityService
+bind:      RcloneStorageDriver, LocalStorageDriver  (not singletons — memoised state lasts one command)
 ```
 
-while keeping the underlying storage implementation replaceable.
+### Data Flow
+
+```text
+Command (parse args, build StoragePath + TransferOptions)
+    ↓
+Service (orchestrate: assert source exists, choose driver, enforce directory semantics)
+    ↓
+StorageDriver (translate to backend: rclone flags, chmod, AWS CLI)
+    ↓
+rclone / PHP filesystem / AWS CLI
+    ↓
+TransferResult (status, counts, errors) → renderTransfer() → ExitCode
+```
+
+### Key Design Decisions
+
+* **Two drivers, one interface.** `RcloneStorageDriver` handles any pair where at least one end is remote; `LocalStorageDriver` handles local↔local. Adding a new backend requires only a new `StorageDriver` implementation.
+* **TransferOptions as a DTO, not config reads.** The queued job payload carries concrete option values; jobs never re-read `config()`.
+* **Single rclone process per remote transfer.** Per-object loops are only for local↔local moves.
+* **Counts from rclone, not predictions.** `RcloneStats::parse()` reads the final `stats` JSON off stderr.
+* **ACL resolved before any write.** Destination-remote-only, memoised, throws early on unmappable values.
 
 ---
 
