@@ -49,7 +49,7 @@ CLI never silently assumes a recursive ACL change.
 
 ## Errors
 
-- **Invalid visibility value** → [[Exit-Codes|exit `2`]].
+- **Invalid visibility value** → [exit `2`](Exit-Codes).
 - **Missing path** → exit `3`.
 - **ACL / permission failure** → exit `5`.
 
@@ -58,5 +58,5 @@ writes; visibility behavior is fully covered by tests against the local driver.
 
 ## Related
 
-- [[Acl-Handling|ACL Handling]] — how remote ACLs are resolved before writes
-- [[Copy]] / [[Upload]] — setting ACLs on freshly written objects via `--acl`
+- [ACL Handling](Acl-Handling) — how remote ACLs are resolved before writes
+- [Copy](Copy) / [Upload](Upload) — setting ACLs on freshly written objects via `--acl`

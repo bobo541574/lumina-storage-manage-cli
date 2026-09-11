@@ -3,7 +3,7 @@
 Move objects or directory/prefix contents between locations with **copy →
 verify → delete source** semantics.
 
-`move-to` is an alias of `move` with identical semantics. [[Rename]] is also
+`move-to` is an alias of `move` with identical semantics. [Rename](Rename) is also
 built on the same engine.
 
 ## Usage
@@ -43,7 +43,7 @@ DELETE source object
 
 - **Only copied-and-verified objects are deleted** from the source.
 - **Failed objects remain** in place and are reported — see
-  [[Progress-and-Reporting|Progress & Reporting]].
+  [Progress & Reporting](Progress-and-Reporting).
 - **Skipped objects** (destination already exists, no `--overwrite`) keep their
   source copy.
 - Emptied source prefixes are removed (rclone `--delete-empty-src-dirs`).
@@ -59,7 +59,7 @@ DELETE source object
 
 ## Options
 
-Identical to [[Copy#options]]: `--overwrite`, `--dry-run`, `--transfers`,
+Identical to [Copy#options](Copy#options): `--overwrite`, `--dry-run`, `--transfers`,
 `--retries`, `--progress`, `--acl`, `--queue`, `-v/--verbose`.
 
 ## Partial results
@@ -75,7 +75,7 @@ The failed source objects remain intact and can be retried.
 
 ## Related
 
-- [[Path-Syntax|Path Syntax]]
-- [[Copy]] — keep the source
-- [[Rename]] — same semantics, "same-ish" locations
-- [[Queue-and-Retry|Queue & Retry]]
+- [Path Syntax](Path-Syntax)
+- [Copy](Copy) — keep the source
+- [Rename](Rename) — same semantics, "same-ish" locations
+- [Queue & Retry](Queue-and-Retry)

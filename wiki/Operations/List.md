@@ -41,8 +41,8 @@ storage list remote:bucket/dir/ --sort-file size
 | `--sort-dir=SORT` | `asc` (default), `desc`, `size`, `size-desc` |
 | `--sort-file=SORT` | `asc` (default), `desc`, `size`, `size-desc` |
 
-An unrecognised `--type` or sort value is rejected with [[Exit-Codes|exit code
-`2`]] rather than silently returning an empty listing.
+An unrecognised `--type` or sort value is rejected with [exit code `2`](Exit-Codes)
+rather than silently returning an empty listing.
 
 ## Behavior
 
@@ -54,5 +54,5 @@ An unrecognised `--type` or sort value is rejected with [[Exit-Codes|exit code
 
 ## Related
 
-- [[Path-Syntax|Path Syntax]]
-- [[Upload]] / [[Download]] — moving data in and out before you list it
+- [Path Syntax](Path-Syntax)
+- [Upload](Upload) / [Download](Download) — moving data in and out before you list it

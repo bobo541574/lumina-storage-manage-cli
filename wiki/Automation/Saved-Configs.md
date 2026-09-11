@@ -1,7 +1,7 @@
 # Saved Configs
 
 Persist and reuse transfer profiles (the same profiles the
-[[Interactive-Wizard|wizard]] loads with `--config` and stores with `--save-as`).
+[wizard](Interactive-Wizard) loads with `--config` and stores with `--save-as`).
 
 ## Usage
 
@@ -54,5 +54,5 @@ in the `saved_configs` table of the app database.
 
 ## Related
 
-- [[Interactive-Wizard|Interactive Wizard]] — `--config` / `--save-as`
-- [[Configuration]] — database variables that back the store
+- [Interactive Wizard](Interactive-Wizard) — `--config` / `--save-as`
+- [Configuration](Configuration) — database variables that back the store

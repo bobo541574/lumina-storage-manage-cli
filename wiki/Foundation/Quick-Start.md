@@ -41,7 +41,7 @@ storage move src:bucket/data/ dst:bucket/data/ --dry-run
 
 Copy `.env.example` to `.env` and set the values you need. Most operations work
 with no configuration at all — remotes are read straight from your rclone
-config. See [[Configuration]] for the full variable reference.
+config. See [Configuration](Configuration) for the full variable reference.
 
 ```bash
 STORAGE_DEFAULT_TRANSFERS=8
@@ -56,5 +56,5 @@ QUEUE_CONNECTION=sync      # or "database" to enable --queue / retry
 ./vendor/bin/pest    # full test suite
 ```
 
-See [[Architecture]] for how the pieces fit together, or jump straight to a
-feature page: [[List]], [[Copy]], [[Move]], [[Delete]], [[Visibility]].
+See [Architecture](Architecture) for how the pieces fit together, or jump straight to a
+feature page: [List](List), [Copy](Copy), [Move](Move), [Delete](Delete), [Visibility](Visibility).

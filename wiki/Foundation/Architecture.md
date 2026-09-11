@@ -69,7 +69,7 @@ Immutable value objects: `StoragePath`, `StorageLocationType`, `TransferOptions`
 - **No-overwrite by default**: `--ignore-existing` unless `--overwrite`.
 - **Queued jobs are self-contained**: `ProcessTransferJob` payloads carry
   concrete option values and never re-read config.
-- **ACL resolved before any write** — see [[Acl-Handling|ACL Handling]].
+- **ACL resolved before any write** — see [ACL Handling](Acl-Handling).
 
 ## Service wiring
 
@@ -79,6 +79,6 @@ Immutable value objects: `StoragePath`, `StorageLocationType`, `TransferOptions`
 
 ## Related
 
-- [[Path-Syntax|Path Syntax]]
-- [[Exit-Codes|Exit Codes]]
-- [[Configuration]]
+- [Path Syntax](Path-Syntax)
+- [Exit Codes](Exit-Codes)
+- [Configuration](Configuration)

@@ -71,10 +71,10 @@ specify the destination explicitly:
 storage copy src:bucket/documents/ dst:bucket/backup/documents/
 ```
 
-These rules apply to [[Copy]], [[Move]], [[Rename]], [[Duplicate]],
-[[Upload]], and [[Download]] alike.
+These rules apply to [Copy](Copy), [Move](Move), [Rename](Rename), [Duplicate](Duplicate),
+[Upload](Upload), and [Download](Download) alike.
 
 ## Related
 
-- [[Architecture]] — value object parsing the syntax
-- [[Exit-Codes]] — what an unparseable path returns
+- [Architecture](Architecture) — value object parsing the syntax
+- [Exit-Codes](Exit-Codes) — what an unparseable path returns

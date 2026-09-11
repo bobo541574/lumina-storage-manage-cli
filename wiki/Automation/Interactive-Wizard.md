@@ -46,7 +46,7 @@ the root.
 ## Saved profiles
 
 Run `wizard --save-as <name>` to persist the operation, or use `--config <name>`
-to reload one. Profiles are managed from the [[Saved-Configs]] page.
+to reload one. Profiles are managed from the [Saved-Configs](Saved-Configs) page.
 
 Example screen:
 
@@ -74,5 +74,5 @@ Example screen:
 
 ## Related
 
-- [[Saved-Configs|Saved Configs]]
-- [[Remotes]] — where the remote options come from
+- [Saved Configs](Saved-Configs)
+- [Remotes](Remotes) — where the remote options come from

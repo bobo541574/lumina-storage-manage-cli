@@ -1,7 +1,7 @@
 # Duplicate
 
 Copy an object or prefix under a new name while keeping the source untouched.
-This is [[Copy]] in non-destructive form.
+This is [Copy](Copy) in non-destructive form.
 
 ## Usage
 
@@ -26,22 +26,22 @@ storage duplicate src:bucket/configs/ dst:bucket/configs-backup/ --dry-run
 
 | Operation | Source kept? | Engine |
 | --- | --- | --- |
-| [[Duplicate]] | ✅ Always | copy |
-| [[Copy]] | ✅ Always | copy |
-| [[Move]] | ❌ After verification | copy → verify → delete |
+| [Duplicate](Duplicate) | ✅ Always | copy |
+| [Copy](Copy) | ✅ Always | copy |
+| [Move](Move) | ❌ After verification | copy → verify → delete |
 
 Duplicate never removes the source. Existing destination objects are kept by
 default; add `--overwrite` to replace them.
 
 ## Options
 
-Identical to [[Copy#options]]: `--overwrite`, `--dry-run`, `--transfers`,
+Identical to [Copy#options](Copy#options): `--overwrite`, `--dry-run`, `--transfers`,
 `--retries`, `--progress`, `--acl`, `--queue`, `-v/--verbose`.
 
 ## Directory semantics
 
 Prefix duplication follows the same contents-into-destination rules as
-[[Copy#directory-semantics|Copy]]:
+[Copy](Copy#directory-semantics):
 
 ```text
 storage duplicate src:bucket/documents/ dst:bucket/documents-copy/
@@ -52,5 +52,5 @@ Both prefixes remain afterward.
 
 ## Related
 
-- [[Copy]]
-- [[Rename]] — copy then delete the source
+- [Copy](Copy)
+- [Rename](Rename) — copy then delete the source

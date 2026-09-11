@@ -1,6 +1,6 @@
 # Rename
 
-Rename or relocate an object or a whole prefix. `rename` shares [[Move]]'s
+Rename or relocate an object or a whole prefix. `rename` shares [Move](Move)'s
 engine and semantics (copy → verify → delete source).
 
 ## Usage
@@ -55,6 +55,6 @@ A source that does not exist exits `3` instead of reporting a successful no-op.
 
 ## Related
 
-- [[Move]] — the underlying engine
-- [[Duplicate]] — copy without deleting the source
-- [[Exit-Codes|Exit Codes]]
+- [Move](Move) — the underlying engine
+- [Duplicate](Duplicate) — copy without deleting the source
+- [Exit Codes](Exit-Codes)

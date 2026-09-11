@@ -100,7 +100,7 @@ Local → Local
 
 ## Related
 
-- [[Path-Syntax|Path Syntax]]
-- [[Move]] — copy, then delete the source
-- [[Duplicate]] — copy and keep the source
-- [[Queue-and-Retry|Queue & Retry]]
+- [Path Syntax](Path-Syntax)
+- [Move](Move) — copy, then delete the source
+- [Duplicate](Duplicate) — copy and keep the source
+- [Queue & Retry](Queue-and-Retry)

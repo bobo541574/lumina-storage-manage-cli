@@ -37,7 +37,7 @@ an explicit `documents/` subpath yourself.
 
 ## Options
 
-Identical to [[Copy#options]]: `--overwrite`, `--dry-run`, `--transfers`,
+Identical to [Copy#options](Copy#options): `--overwrite`, `--dry-run`, `--transfers`,
 `--retries`, `--progress`, `--acl`, `--queue`, `-v/--verbose`.
 
 (`--acl` applies to the transfer if the destination remote writes ACLs; local
@@ -52,5 +52,5 @@ downloads are unaffected.)
 
 ## Related
 
-- [[Upload]] — the reverse direction
-- [[Copy]] — same engine and semantics
+- [Upload](Upload) — the reverse direction
+- [Copy](Copy) — same engine and semantics

@@ -1,7 +1,7 @@
 # Error Handling
 
 Errors are surfaced as readable application messages, grouped instead of
-repeated, and mapped to predictable [[Exit-Codes|exit codes]].
+repeated, and mapped to predictable [exit codes](Exit-Codes).
 
 ## Exception hierarchy
 
@@ -34,7 +34,7 @@ Raw rclone/AWS shell output is never the primary experience. With `-v` /
 
 ## Grouped error lines
 
-As described on [[Progress-and-Reporting]], identical failures collapse to one
+As described on [Progress-and-Reporting](Progress-and-Reporting), identical failures collapse to one
 line with an object count and an example key; `RequestID`/`HostID` fragments are
 stripped, and rclone's `Attempt N/M failed` retry summaries are dropped so one
 failure isn't listed once per retry. At most five distinct errors are shown
@@ -58,6 +58,6 @@ in the rclone config.
 
 ## Related
 
-- [[Exit-Codes|Exit Codes]]
-- [[Progress-and-Reporting|Progress & Reporting]]
-- [[Configuration]] — `STORAGE_LOG_*` variables
+- [Exit Codes](Exit-Codes)
+- [Progress & Reporting](Progress-and-Reporting)
+- [Configuration](Configuration) — `STORAGE_LOG_*` variables

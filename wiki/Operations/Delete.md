@@ -58,6 +58,6 @@ storage delete do-spaces-nyc:my-data/tmp/ --dry-run
 
 ## Related
 
-- [[Exit-Codes|Exit Codes]]
-- [[Progress-and-Reporting|Progress & Reporting]]
-- [[Interactive-Wizard|Interactive Wizard]] (deletion flow)
+- [Exit Codes](Exit-Codes)
+- [Progress & Reporting](Progress-and-Reporting)
+- [Interactive Wizard](Interactive-Wizard) (deletion flow)

@@ -27,38 +27,38 @@ Requirements: PHP ^8.3, [rclone](https://rclone.org) on `PATH`, and the AWS CLI
 
 ### Operations
 
-- [[List]] — browse objects and directories
-- [[Copy]] — copy objects / prefixes between locations (`copy`, `copy-to`)
-- [[Move]] — copy → verify → delete source (`move`, `move-to`)
-- [[Rename]] — rename / relocate objects and prefixes
-- [[Duplicate]] — non-destructive copy
-- [[Delete]] — delete objects and prefixes
-- [[Download]] — remote → local
-- [[Upload]] — local → remote
-- [[Visibility]] — set object/prefix visibility (private / public)
+- [List](List) — browse objects and directories
+- [Copy](Copy) — copy objects / prefixes between locations (`copy`, `copy-to`)
+- [Move](Move) — copy → verify → delete source (`move`, `move-to`)
+- [Rename](Rename) — rename / relocate objects and prefixes
+- [Duplicate](Duplicate) — non-destructive copy
+- [Delete](Delete) — delete objects and prefixes
+- [Download](Download) — remote → local
+- [Upload](Upload) — local → remote
+- [Visibility](Visibility) — set object/prefix visibility (private / public)
 
 ### Automation
 
-- [[Interactive-Wizard|Interactive Wizard]] — guided operation builder
-- [[Remotes]] — manage rclone remotes
-- [[Saved-Configs|Saved Configs]] — reusable transfer profiles
-- [[Queue-and-Retry|Queue & Retry]] — background transfers and failed-job retry
+- [Interactive Wizard](Interactive-Wizard) — guided operation builder
+- [Remotes](Remotes) — manage rclone remotes
+- [Saved Configs](Saved-Configs) — reusable transfer profiles
+- [Queue & Retry](Queue-and-Retry) — background transfers and failed-job retry
 
 ### Under the Hood
 
-- [[Path-Syntax|Path Syntax]] — canonical `<remote>:<bucket>/<path>` syntax
-- [[Acl-Handling|ACL Handling]] — how ACLs are resolved before every write
-- [[Progress-and-Reporting|Progress & Reporting]] — badges, live progress, counts
-- [[Error-Handling|Error Handling]] — exceptions, grouped errors, log
-- [[Exit-Codes|Exit Codes]] — predictable status codes
-- [[Configuration]] — environment variables
-- [[Architecture]] — layered design and service wiring
+- [Path Syntax](Path-Syntax) — canonical `<remote>:<bucket>/<path>` syntax
+- [ACL Handling](Acl-Handling) — how ACLs are resolved before every write
+- [Progress & Reporting](Progress-and-Reporting) — badges, live progress, counts
+- [Error Handling](Error-Handling) — exceptions, grouped errors, log
+- [Exit Codes](Exit-Codes) — predictable status codes
+- [Configuration](Configuration) — environment variables
+- [Architecture](Architecture) — layered design and service wiring
 
 ### Foundation
 
-- [[Quick-Start|Quick Start]] — install, build, first commands
-- [[Path-Syntax|Path Syntax]]
-- [[Architecture]]
+- [Quick Start](Quick-Start) — install, build, first commands
+- [Path Syntax](Path-Syntax)
+- [Architecture](Architecture)
 
 ## Path Syntax in One Line
 

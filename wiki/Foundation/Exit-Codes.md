@@ -36,5 +36,5 @@ shared handler rather than hard-coding a code in each catch block.
 
 ## Related
 
-- [[Error-Handling|Error Handling]] — how errors are surfaced and grouped
-- [[Progress-and-Reporting|Progress & Reporting]] — result badges
+- [Error Handling](Error-Handling) — how errors are surfaced and grouped
+- [Progress & Reporting](Progress-and-Reporting) — result badges

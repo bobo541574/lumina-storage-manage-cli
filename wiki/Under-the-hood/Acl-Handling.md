@@ -59,6 +59,6 @@ rclone config update myremote acl public-read
 
 ## Related
 
-- [[Visibility]] — set ACLs on existing objects
-- [[Configuration]] — the `visibility` mapping in `config/storage.php`
-- [[Upload]] / [[Copy]] — where `--acl` is applied on writes
+- [Visibility](Visibility) — set ACLs on existing objects
+- [Configuration](Configuration) — the `visibility` mapping in `config/storage.php`
+- [Upload](Upload) / [Copy](Copy) — where `--acl` is applied on writes

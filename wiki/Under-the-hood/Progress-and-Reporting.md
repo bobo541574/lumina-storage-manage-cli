@@ -65,6 +65,6 @@ log directory (`STORAGE_LOG_PATH`).
 
 ## Related
 
-- [[Error-Handling|Error Handling]]
-- [[Exit-Codes|Exit Codes]]
-- [[Configuration]] — logging variables
+- [Error Handling](Error-Handling)
+- [Exit Codes](Exit-Codes)
+- [Configuration](Configuration) — logging variables

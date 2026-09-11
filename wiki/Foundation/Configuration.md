@@ -51,10 +51,10 @@ and remote secrets stay in the rclone config.
 This CLI adds a `--queue`/`retry` system and the saved-configs store on top of
 rclone. Remote credentials (access keys, tokens, endpoints) are **never** stored
 in the app — they live only in `~/.config/rclone/rclone.conf`. See
-[[Remotes]] to manage them safely from the CLI.
+[Remotes](Remotes) to manage them safely from the CLI.
 
 ## Related
 
-- [[Quick-Start|Quick Start]]
-- [[Acl-Handling|ACL Handling]]
-- [[Queue-and-Retry|Queue & Retry]]
+- [Quick Start](Quick-Start)
+- [ACL Handling](Acl-Handling)
+- [Queue & Retry](Queue-and-Retry)

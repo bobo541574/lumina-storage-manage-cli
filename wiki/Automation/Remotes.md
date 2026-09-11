@@ -55,6 +55,6 @@ storage remotes:forget myremote --force
 
 ## Related
 
-- [[Interactive-Wizard|Interactive Wizard]] — pick a remote interactively
-- [[Configuration]] — `STORAGE_CACHE_TTL` for remote-listing cache
-- [[List]] — see a remote's buckets once configured
+- [Interactive Wizard](Interactive-Wizard) — pick a remote interactively
+- [Configuration](Configuration) — `STORAGE_CACHE_TTL` for remote-listing cache
+- [List](List) — see a remote's buckets once configured

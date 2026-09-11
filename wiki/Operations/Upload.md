@@ -40,7 +40,7 @@ nested unless you include it in the destination path.
 
 ## Options
 
-Identical to [[Copy#options]]: `--overwrite`, `--dry-run`, `--transfers`,
+Identical to [Copy#options](Copy#options): `--overwrite`, `--dry-run`, `--transfers`,
 `--retries`, `--progress`, `--acl`, `--queue`, `-v/--verbose`.
 
 ## Notes
@@ -48,9 +48,9 @@ Identical to [[Copy#options]]: `--overwrite`, `--dry-run`, `--transfers`,
 - A **missing source** exits `3`.
 - Uploads run as a single rclone process.
 - `--acl` / `STORAGE_DEFAULT_ACL` control the ACL applied to written objects —
-  see [[Acl-Handling|ACL Handling]].
+  see [ACL Handling](Acl-Handling).
 
 ## Related
 
-- [[Download]] — the reverse direction
-- [[Copy]] — same engine and semantics
+- [Download](Download) — the reverse direction
+- [Copy](Copy) — same engine and semantics

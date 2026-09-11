@@ -67,6 +67,6 @@ QUEUE_CONNECTION=database storage queue:work database --stop-when-empty
 
 ## Related
 
-- [[Exit-Codes|Exit Codes]]
-- [[Error-Handling|Error Handling]] — why a job may fail
-- [[Configuration]] — queue, database, and failed-job variables
+- [Exit Codes](Exit-Codes)
+- [Error Handling](Error-Handling) — why a job may fail
+- [Configuration](Configuration) — queue, database, and failed-job variables
