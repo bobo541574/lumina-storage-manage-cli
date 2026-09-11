@@ -269,6 +269,110 @@ QUEUE_CONNECTION=database storage queue:work database --stop-when-empty
 storage retry all
 ```
 
+## Architecture
+
+The CLI follows a layered design: **Commands** parse arguments and render
+output, **Services** hold transfer/visibility logic, and **Drivers** talk to
+backends. Laravel's container wires everything in `AppServiceProvider`.
+
+```mermaid
+flowchart TD
+    User["storage &lt;command&gt;"] --> Entry["CLI Entry Point"]
+    Entry --> CMD{"Command Type"}
+
+    CMD -->|"copy / move / rename<br/>upload / download"| Transfer["TransferService"]
+    CMD -->|"delete"| Delete["TransferService::delete()"]
+    CMD -->|"visibility"| Vis["VisibilityService"]
+    CMD -->|"list"| List["StorageService::list()"]
+    CMD -->|"wizard"| Wizard["WizardCommand<br/>(interactive flow)"]
+    CMD -->|"remotes:*"| Remote["RemoteManager<br/>(rclone config)"]
+
+    Transfer -->|"--dry-run?"| DryRun["Return counts<br/>no writes"]
+    Transfer -->|"--queue"| Job["ProcessTransferJob<br/>(dispatched to queue)"]
+    Transfer -->|"inline"| Driver{"Driver Selection"}
+
+    Delete --> Driver
+    Vis -->|"apply()"| Driver
+
+    Driver -->|"remote path"| Rclone["RcloneStorageDriver<br/>→ RcloneProcess<br/>→ rclone CLI"]
+    Driver -->|"local path"| Local["LocalStorageDriver<br/>→ PHP filesystem"]
+
+    Rclone --> Backend["S3 / DigitalOcean /<br/>any rclone backend"]
+    Local --> FS["Local Disk"]
+
+    Job --> Queue["Queue Worker<br/>(database)"]
+    Queue -->|"retries=3"| Transfer
+
+    Wizard -->|"select storage"| StorageSvc["StorageService"]
+    Wizard -->|"select operation"| CMD
+    StorageSvc -->|"remotes() / buckets()"| Driver
+
+    style User fill:#e1f5fe
+    style DryRun fill:#fff9c4
+    style Job fill:#f3e5f5
+    style Backend fill:#e8f5e9
+    style FS fill:#e8f5e9
+```
+
+### Service Wiring
+
+`AppServiceProvider` binds singletons so each command receives injected
+dependencies:
+
+```mermaid
+flowchart LR
+    subgraph "AppServiceProvider"
+        SS["StorageService"]
+        TS["TransferService"]
+        VS["VisibilityService"]
+        RM["RemoteManager"]
+    end
+
+    subgraph "Drivers"
+        RSD["RcloneStorageDriver"]
+        LSD["LocalStorageDriver"]
+        RP["RcloneProcess"]
+    end
+
+    subgraph "Support"
+        SL["StorageLogger"]
+        RS["RcloneStats"]
+        SF["SizeFormatter"]
+    end
+
+    SS --> RSD
+    SS --> LSD
+    TS --> RSD
+    TS --> LSD
+    VS --> SS
+    RSD --> RP
+    RSD --> SL
+    RP --> RS
+```
+
+### Queue & Retry Flow
+
+Transfer commands accept `--queue` to defer work to a background job.
+Failed jobs land in `failed_jobs` and can be re-dispatched with `retry`.
+
+```mermaid
+flowchart TD
+    A["storage copy src/ dst/ --queue"] --> B["ProcessTransferJob dispatched"]
+    B --> C{"QUEUE_CONNECTION?"}
+    C -->|"sync (default)"| D["Runs inline<br/>same process"]
+    C -->|"database"| E["Saved to jobs table"]
+    E --> F["queue:work database"]
+    F --> G["ProcessTransferJob::handle()"]
+    G --> H["TransferService::copy()"]
+    H --> I["RcloneStorageDriver"]
+    I -->|"success"| J["Completed"]
+    I -->|"exception"| K["Job fails<br/>(tries=3)"]
+    K -->|"retries left"| G
+    K -->|"exhausted"| L["failed_jobs table"]
+    L --> M["storage retry &lt;id&gt;"]
+    M --> E
+```
+
 ## Path Syntax
 
 ```text
