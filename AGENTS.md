@@ -1,0 +1,59 @@
+# AGENTS.md
+
+Laravel Zero 13 CLI (PHP ^8.3) for managing files/objects across rclone, S3-compatible, and local backends. Spec: `laravel-zero-storage-cli.md`. Legacy Bash reference: `multi-remote-transfer.sh`. Project docs: `README.md`, `docs/MIGRATION.md`.
+
+## Commands
+
+- Dev entry is `php storage-manage-cli <command>` (the composer bin; no `artisan`). Build phar: `php storage-manage-cli app:build storage` → `builds/storage`.
+- Tests: `./vendor/bin/pest` (Pest v4). One file: `./vendor/bin/pest tests/Unit/LocalStorageDriverTest.php`.
+- Style: `./vendor/bin/pint`, then verify with `./vendor/bin/pint --test`.
+- **Packagist is network-blocked here** — Composer must use the Tencent mirror (`https://mirrors.cloud.tencent.com/composer`, already configured). Never run a bare `composer install/update`.
+- **Not a git repository** — `git status`/`git diff` will fail; no commit/push flows.
+
+## Architecture
+
+- Flow: `app/Commands/` → services (`TransferService`, `StorageService`, `VisibilityService`) → `app/Contracts/StorageDriver.php` implemented by `LocalStorageDriver` (pure PHP, operates on absolute paths) and `RcloneStorageDriver` (rclone / AWS CLI subprocesses via `app/Support/RcloneProcess.php`).
+- Transfer semantics live in services, not commands: default **no-overwrite** (existing dest objects kept unless `--overwrite`, implemented as rclone `--ignore-existing`); directory/prefix copy copies **contents into** the destination preserving structure (never nests the source dir); `move` = copy → verify → delete source; `--dry-run` short-circuits before any write/mkdir.
+- **Any transfer with a remote end runs as ONE rclone process.** `TransferService::move()` delegates a remote move to `RcloneStorageDriver::move()` (`move`/`moveto` + `--delete-empty-src-dirs`), which already does copy → verify → delete per object, in parallel, server-side where possible. Never reintroduce a per-object loop there: it spawned ~10 subprocesses per object (tens of thousands for a large prefix). The per-object loop in `TransferService::move()` is only for local↔local.
+- **Counts come from rclone, never from a prediction.** Every rclone transfer/delete runs with `--use-json-log --stats=1s --stats-one-line --stats-log-level NOTICE`; `App\Support\RcloneStats::parse()` reads the last `stats` object off stderr — `transfers` = copied, `checks` = skipped, `errors` = failed, plus `level:"error"` lines as messages. Only `--dry-run` uses `TransferService::expectedCounts()` (a listing-based estimate).
+- **`RcloneStorageDriver::exists()` must check for non-empty output, not exit status.** `rclone lsf` exits 0 with empty stdout for a key/prefix that does not exist on an object store; the old exit-code check made every destination look occupied, so `rename`/`move` skipped whole prefixes ("Renamed 0, skipped 4370"). For the same reason `list()` on a remote raises `ObjectNotFoundException` (exit 3) when the listing is empty and the path is not a bucket root.
+- ACL precedence is `--acl` → `storage.defaults.acl` (`STORAGE_DEFAULT_ACL`) → the destination remote's own `acl` → rclone's default. The first two arrive at the driver as `TransferOptions::$acl`: `addTransferOptions()` gives the `--acl` option `$defaults['acl']` as its Symfony default, the same pattern `--transfers`/`--retries` use, so the queued payload still carries a concrete value. `configure()` runs in the command constructor, so a test must set the config **before** instantiating the command (see `tests/Feature/TransferOptionDefaultsTest.php`).
+- **S3 ACLs are resolved before every write.** rclone falls back to the `acl` key of the remote's own config when `--acl` is absent and sends it verbatim; an application-level value there (`acl = public`) makes every server-side CopyObject fail with `400 InvalidArgument`. `RcloneStorageDriver::aclFlags()` reads the destination remote's configured ACL (memoised), and when it is not one of `self::CANNED_ACLS` maps it through `config('storage.visibility')` into an explicit `--s3-acl=`. A value that maps to nothing valid raises `TransferException` **before** anything is transferred. Only the destination is consulted — a local destination performs no S3 write.
+- Rclone error lines are grouped by `RcloneStats::collapse()`: `RequestID`/`HostID` are stripped (they are unique per request, so nothing deduplicated), `Attempt N/M failed with …` summaries are dropped, and identical failures render once as `… (4370 objects, e.g. <key>)`. `renderErrorList()` then shows at most five.
+- `isAvailable()` / `remotes()` are memoised per driver instance (the driver stays `bind`, not `singleton`, so the memo lasts one command); call `flushRemotes()` after changing the rclone config.
+- Presentation: `app/Commands/Concerns/PresentsOutput.php` is the single source of CLI styling — `renderOperationHeader()` (cyan badge + optional DRY RUN badge; also starts the operation clock), `renderDetail()` (label padded to 13 cols), `renderSuccess()`/`renderPartial()`/`renderFailed()`/`renderDryRun()`/`renderInfo()` badges, `renderError()` (red `✖`, the only error style — do not use `$this->error('[ERROR] …')`), `renderHint()`, `elapsed()`. `describeLocations()` uses these for transfer commands; `Delete`, `Visibility`, `List`, `Retry`, `Remotes*` and `Configs*` use them directly.
+- "Nothing to do" renders an **INFO** badge, never DRY RUN — a real delete that removed nothing must not look like a simulation.
+- `--progress` does not pass `--progress` to rclone (its ANSI bar needs a TTY and collides with the JSON log). Commands call `trackProgress($this->transfers, $options)`, which registers a handler via `TransferService::reportProgress()` → `RcloneStorageDriver::onProgress()`; the driver feeds parsed `RcloneStats` per stats line and the trait redraws one `\r` line, cleared by `clearProgress()`. Only rendered when the output is decorated.
+- `config/commands.php` `'default'` is `App\Commands\ListCommand`; framework `ListCommand` + `SummaryCommand` are removed, so the app's `list` command owns the canonical name. Bare `php storage-manage-cli` prints `list` usage.
+- `config/storage.php`: default driver (`rclone`), log dir (`~`-expanded, `~/.config/storage-cli/logs`), transfer defaults (overridden by CLI options), and application-visibility → ACL mapping. All values are env-driven (`STORAGE_*`; see `.env.example`).
+- Exit codes (`app/Support/ExitCode.php`): 0 ok, 1 failure, 2 invalid args, 3 not found, 4 destination, 5 visibility, 6 partial. Commands map exceptions through `reportException()`/`exitCodeFor()` rather than hard-coding a code per catch block. `retry` with IDs that match nothing exits 1, not 0.
+- `App\Support\RcloneProcess` is intentionally **not final**: `RcloneProcess::run(array $arguments, ?callable $onOutput = null)` is stubbed in `tests/Unit/RcloneStorageDriverTest.php` to assert which rclone commands and flags a driver call produces. That is the regression net for the driver — extend it rather than reaching for a real remote.
+- `App\Support\SizeFormatter` (B→P, saturating) and `App\Support\DurationFormatter` (ms/s/m/h) format every number the CLI prints.
+- Components: `StorageLogger` = Monolog RotatingFileHandler on the custom `storage` channel; `StorageService::remotes()/buckets()` cached via optional `Repository` (TTL `storage.cache.ttl`, 0 disables); `saved_configs` table + `configs`/`configs:save`/`configs:forget`; `--queue` on the 8 transfer commands dispatches `app/Jobs/ProcessTransferJob.php` (tries=3, throws on partial → `failed_jobs`; re-dispatched by `retry`). Remote definitions live in the rclone config, not the DB: `RemoteManager` + `remotes`/`remotes:add`/`remotes:forget` shell out to `rclone listremotes`/`config create`/`config delete`; credentials are never stored or logged. `StorageService` depends on `app/Contracts/RemoteDiscovery.php` (implemented by `RcloneStorageDriver`) for cache-testable remote/bucket discovery; `TransferService`/`VisibilityService` are **not final** so jobs can be unit-tested with Mockery. The queued job payload carries concrete option values (do not reintroduce `config()` reads inside the job).
+- Queue smoke flow: `QUEUE_CONNECTION=database <entry> copy <src> <dst> --queue` → `<entry> queue:work database --stop-when-empty --tries=1` → `<entry> retry <id>` → queue:work again. `--queue` under the default `sync` connection runs inline (still prints "Queued").
+
+## Command conventions
+
+- `$description` / `$help` properties must be **untyped** — the Illuminate base class declares them typed, and a typed redeclaration is fatal.
+- Command names/aliases come from `#[AsCommand(name: 'x', aliases: [...])]`. If you pass `description:` in the attribute it overrides the `$description` property, so keep them consistent.
+
+## Testing gotchas (all observed)
+
+- Pest shares one process across all suites: top-level helper **function names collide across files**. Every helper must be unique per file (existing convention: `remove_tree_lsd`, `rmtree_ct`, `wizard_fixture`, `local_fixture_base`, …). Never define a bare `remove_tree()`.
+- `expectsOutputToContain()` matches whole formatted output lines; expect per-line, not across multi-line output.
+- After `Artisan::call()`, capture the text ONCE (`$out = Artisan::output()`) — repeated calls return empty on the second call, so never re-invoke it inside an `expect()...->and()` chain.
+- `renderDetail()` outputs `Label        value` (label padded to 13 columns) on a single line; `renderOperationHeader()` draws the badge and starts the timer; `renderSeparator()` draws a thin gray line. These are in `app/Commands/Concerns/PresentsOutput.php`.
+- `expectsOutputToContain()` consumes **one** expectation per output line: two expectations that both match the same rendered line will fail the second. Assert one substring per line.
+- Result lines end with `  (1.2s)`, so assert on the counted phrase (`'Renamed 2 objects'`), never on a whole trailing line.
+- The `artisan()` PendingCommand emulator throws `NoMatchingExpectationException` on unregistered question prompts. For flows without `expectsQuestion`/`expectsConfirmation`, use `Artisan::call()` + `Artisan::output()` (see DeleteCommand tests).
+- Pest ignores PHP `@` suppression: stray warnings surface as suite warnings. Guard fixture cleanup with `is_dir()` checks.
+- Manual smoke uses `php storage-manage-cli`; interactive commands (e.g. `wizard`) need piped stdin, e.g. `script -q /dev/null php storage-manage-cli wizard` with piped answers.
+
+## Runtime quirks
+
+- Real rclone remotes exist (`FNI:`, `secretary_standard:`, `secretary_old:`) with real data — do not run destructive operations on them during testing/smoke. `remotes:add`/`remotes:forget` tests must point `RCLONE_CONFIG` at a temp file and clean `.` it up (see `tests/Feature/RemotesCommandsTest.php`); never let them touch `~/.config/rclone/rclone.conf`.
+- **Subprocess env inheritance**: Symfony `Process` only inherits variables present in **both** `getenv()` and `$_SERVER`. `RCLONE_CONFIG` set via `putenv()` alone is silently dropped — `RcloneProcess::run()` must pass `env: getenv()` explicitly (it does; keep it that way).
+- rclone's `local` backend resolves `:local:` relative to the **process cwd**, not any configured root.
+- Remote-flow tests define throwaway `local`-backend remotes by setting `RCLONE_CONFIG` (see `WizardCommandTest`, `StorageServiceTest`) and require `rclone` on `PATH`.
+- Real S3/Spaces buckets enforce bucket-owner ACLs, so direct visibility/ACL writes to them fail; scope visibility coverage to `LocalStorageDriver`.
+- Logs must never contain credentials; both drivers only log operation metadata.
