@@ -100,8 +100,9 @@ queued transfer (--queue) fails; `queue:work` reprocesses them once retried.';
     {
         $jobs = $this->transferJobs($failer);
 
+        $this->renderOperationHeader('RETRY');
+
         if ($jobs === []) {
-            $this->newLine();
             $this->renderInfo('No failed transfer jobs.');
 
             return;

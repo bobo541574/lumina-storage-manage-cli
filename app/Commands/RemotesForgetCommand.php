@@ -58,7 +58,7 @@ The command asks for confirmation; use --force non-interactively.';
             return ExitCode::FAILURE;
         }
 
-        $this->line(sprintf('Remote <info>%s</info> deleted.', $name));
+        $this->renderSuccess(sprintf('Remote %s deleted.', $name));
 
         return ExitCode::SUCCESS;
     }

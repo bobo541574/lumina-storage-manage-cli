@@ -42,9 +42,12 @@ class ListCommand extends Command
   storage list /srv/backups --recursive
   storage list remote:bucket/dir/ --type files --recursive
   storage list remote:bucket/dir/ --sort-dir size --sort-file desc
+  storage list remote:bucket/dir/ --size
 
 A trailing slash marks an explicit directory/prefix. --type accepts all, dirs
-or files. Running without a path prints this usage screen.';
+or files. --size shows each directory\'s recursive total; it needs a full walk
+of the tree (one extra rclone pass when not already recursive). Running without
+a path prints this usage screen.';
 
     public function __construct(private readonly StorageService $storage)
     {
@@ -63,6 +66,7 @@ or files. Running without a path prints this usage screen.';
 
         $type = (string) $this->option('type');
         $recursive = (bool) $this->option('recursive');
+        $withSizes = (bool) $this->option('size');
 
         // An unrecognised --type used to filter out both files and directories
         // and report an empty, successful listing.
@@ -89,9 +93,18 @@ or files. Running without a path prints this usage screen.';
             $this->renderDetail('Path', $target->toDisplayString());
             $this->newLine();
 
-            $result = $this->storage->list($target, $recursive, $type);
+            $result = $this->storage->list($target, $recursive, $type, $withSizes);
 
-            $this->render($result->entries, (string) $this->option('sort-dir'), (string) $this->option('sort-file'));
+            // An empty listing is a deliberate empty state, not a broken one:
+            // one INFO badge and nothing else. A "0 files · 0B" summary adds
+            // noise without information.
+            if ($result->entries === []) {
+                $this->renderInfo('(empty)');
+
+                return self::SUCCESS;
+            }
+
+            $this->render($result->entries, (string) $this->option('sort-dir'), (string) $this->option('sort-file'), $withSizes);
 
             // Count files and directories apart: a directory is not an object,
             // and folding both into one total overstated what is stored here.
@@ -144,6 +157,12 @@ or files. Running without a path prints this usage screen.';
                 'R',
                 InputOption::VALUE_NONE,
                 'List recursively',
+            )
+            ->addOption(
+                'size',
+                null,
+                InputOption::VALUE_NONE,
+                'Show the total size of each directory',
             )
             ->addOption(
                 'sort-dir',
@@ -213,7 +232,7 @@ or files. Running without a path prints this usage screen.';
     }
 
     /** @param array<int, ListingEntry> $entries */
-    private function render(array $entries, string $sortDir, string $sortFile): void
+    private function render(array $entries, string $sortDir, string $sortFile, bool $withSizes = false): void
     {
         $dirs = [];
         $files = [];
@@ -230,15 +249,13 @@ or files. Running without a path prints this usage screen.';
         $files = $this->sortEntries($files, $sortFile);
 
         foreach ($dirs as $entry) {
-            $this->line(sprintf('  <info>%s</info>/', $entry->path));
+            // Without --size a directory has no meaningful size to show, so the
+            // column stays blank rather than printing a misleading 0B.
+            $this->line(sprintf('  %10s  <info>%s</info>/', $withSizes ? SizeFormatter::human($entry->size) : '', $entry->path));
         }
 
         foreach ($files as $entry) {
             $this->line(sprintf('  %10s  %s', SizeFormatter::human($entry->size), $entry->path));
-        }
-
-        if ($entries === []) {
-            $this->renderHint('(empty)');
         }
     }
 

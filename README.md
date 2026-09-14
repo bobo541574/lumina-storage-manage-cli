@@ -42,11 +42,17 @@ storage list remote:bucket/dir/ --sort-dir size-desc --sort-file asc
 
 # Sort files from smallest to largest
 storage list remote:bucket/dir/ --sort-file size
+
+# Show each directory's recursive total size
+storage list remote:bucket/dir/ --size
 ```
 
 `--type` accepts `all`, `dirs` or `files`; `--sort-dir`/`--sort-file` accept
 `asc`, `desc`, `size` or `size-desc`. An unrecognised value is rejected with
-exit code `2` rather than silently returning an empty listing.
+exit code `2` rather than silently returning an empty listing. `--size` shows
+the total bytes stored under each directory; it needs a full walk of the tree
+(one extra rclone pass when the listing is not already recursive), so leave it
+off for the fastest listing.
 
 A path that does not exist exits `3` (not found), matching the behaviour of the
 transfer commands. On object stores an empty prefix and a missing prefix are
@@ -170,7 +176,9 @@ storage delete do-spaces-nyc:my-data/tmp/ --dry-run
 `delete` checks the path before doing anything: a path that is not there exits
 `3` with `Nothing found at: …`, so a typo can never look like a completed
 deletion. A path that exists but holds no objects reports `Nothing to delete.`
-and exits `0`.
+and exits `0`. `delete --dry-run` runs the deletion in rclone's own dry-run mode
+(one pass, no preliminary full listing), so previewing a large prefix costs the
+same as the real deletion instead of double.
 
 ### `visibility` — Set object visibility (private/public)
 
@@ -474,7 +482,9 @@ with the elapsed time:
 
 **Counts are measured, not predicted.** Every rclone invocation runs with
 `--use-json-log` and the reported `copied` / `skipped` / `failed` numbers come
-from rclone's own final counters. Only `--dry-run` estimates from a listing.
+from rclone's own final counters. `delete --dry-run` runs `rclone delete
+--dry-run` in one parallel pass and reports what it would remove; the
+copy/move/rename dry-runs estimate from a listing (`TransferService::expectedCounts()`).
 
 **`--progress`** renders a single live line that is erased when the operation
 finishes:

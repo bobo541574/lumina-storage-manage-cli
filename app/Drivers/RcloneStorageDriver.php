@@ -160,20 +160,35 @@ final class RcloneStorageDriver implements RemoteDiscovery, StorageDriver
         return $buckets;
     }
 
-    public function list(StoragePath $path, bool $recursive = false, bool $directories = true, bool $files = true): ListingResult
+    public function list(StoragePath $path, bool $recursive = false, bool $directories = true, bool $files = true, bool $withDirectorySizes = false): ListingResult
     {
         $this->assertAvailable();
         $this->assertRemote($path);
 
-        $entries = [];
+        $fileEntries = $files ? $this->listType($path, $recursive, true) : [];
+        $dirEntries = $directories ? $this->listType($path, $recursive, false) : [];
 
-        if ($files) {
-            $entries = array_merge($entries, $this->listType($path, $recursive, true));
+        // A directory's size is the recursive total of everything under it, so
+        // it can only come from a full file listing. When we are already
+        // recursive that listing is in hand; otherwise it costs exactly one
+        // extra rclone pass for the whole tree — never one call per directory.
+        if ($directories && $withDirectorySizes) {
+            $sizeSource = $files && $recursive ? $fileEntries : $this->listType($path, true, true);
+            $dirSizes = $this->sumSizesByDirectory($sizeSource);
+
+            $dirEntries = array_map(
+                static fn (ListingEntry $entry): ListingEntry => new ListingEntry(
+                    name: $entry->name,
+                    path: $entry->path,
+                    size: $dirSizes[$entry->path] ?? 0,
+                    isDirectory: true,
+                    isFile: false,
+                ),
+                $dirEntries,
+            );
         }
 
-        if ($directories) {
-            $entries = array_merge($entries, $this->listType($path, $recursive, false));
-        }
+        $entries = array_merge($fileEntries, $dirEntries);
 
         // rclone exits 0 with no output for a prefix that holds nothing, so an
         // empty listing is the only signal an object store gives that the path
@@ -187,6 +202,29 @@ final class RcloneStorageDriver implements RemoteDiscovery, StorageDriver
         }
 
         return new ListingResult($entries);
+    }
+
+    /**
+     * Sum object sizes into every ancestor directory prefix, so each key is the
+     * recursive total stored under that directory.
+     *
+     * @param  array<int, ListingEntry>  $entries
+     * @return array<string, int>
+     */
+    private function sumSizesByDirectory(array $entries): array
+    {
+        $sizes = [];
+
+        foreach ($entries as $entry) {
+            $dir = dirname($entry->path);
+
+            while ($dir !== '.' && $dir !== '/') {
+                $sizes[$dir] = ($sizes[$dir] ?? 0) + $entry->size;
+                $dir = dirname($dir);
+            }
+        }
+
+        return $sizes;
     }
 
     private function listType(StoragePath $path, bool $recursive, bool $filesOnly): array

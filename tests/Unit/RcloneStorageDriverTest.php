@@ -35,9 +35,29 @@ final class FakeRcloneProcess extends RcloneProcess
     {
         $this->calls[] = $arguments;
 
-        return $this->responses[$arguments[0] ?? '']
+        return $this->responses[self::keyFor($arguments)]
+            ?? $this->responses[$arguments[0] ?? '']
             ?? $this->fallback
             ?? new ProcessResult(0, '', '');
+    }
+
+    /**
+     * Stable key for a call's flags, so a test can distinguish the file
+     * listing from the directory listing (both are the "lsf" verb).
+     */
+    public static function keyFor(array $arguments): string
+    {
+        $flags = [];
+
+        foreach (array_slice($arguments, 1) as $argument) {
+            if (str_starts_with($argument, '-') && strlen($argument) > 1) {
+                $flags[] = $argument;
+            }
+        }
+
+        sort($flags, SORT_STRING);
+
+        return ($arguments[0] ?? '').' '.implode(' ', $flags);
     }
 
     /** @return array<int, array<int, string>> */
@@ -101,6 +121,74 @@ test('exists() is false when rclone fails', function () {
     expect($driver->exists(StoragePath::fromString('rem:nosuchbucket/')))->toBeFalse();
 });
 
+test('list computes each directory size from a single extra recursive pass', function () {
+    $files = new ProcessResult(0, "100\treadme.md\n", '');
+    $dirs = new ProcessResult(0, "-1\tdocs/\n-1\timg/\n", '');
+    $sizes = new ProcessResult(0, "100\treadme.md\n50\tdocs/guide.txt\n30\tdocs/old.txt\n200\timg/photo.jpg\n", '');
+
+    [$driver, $process] = rclone_driver_fixture([
+        FakeRcloneProcess::keyFor(['lsf', '--files-only', '--format', 'sp', '--separator', "\t"]) => $files,
+        FakeRcloneProcess::keyFor(['lsf', '--dirs-only', '--format', 'sp', '--separator', "\t"]) => $dirs,
+        FakeRcloneProcess::keyFor(['lsf', '-R', '--files-only', '--format', 'sp', '--separator', "\t"]) => $sizes,
+    ]);
+
+    $result = $driver->list(
+        StoragePath::fromString('rem:bucket/dir/'),
+        recursive: false,
+        directories: true,
+        files: true,
+        withDirectorySizes: true,
+    );
+
+    $byName = [];
+
+    foreach ($result->entries as $entry) {
+        $byName[$entry->name] = $entry;
+    }
+
+    expect($byName['docs']->isDirectory)->toBeTrue()
+        ->and($byName['docs']->size)->toBe(80)
+        ->and($byName['img']->size)->toBe(200)
+        ->and($byName['readme.md']->size)->toBe(100);
+
+    $recursiveFiles = array_filter(
+        $process->calls,
+        static fn (array $call): bool => in_array('-R', $call, true) && in_array('--files-only', $call, true),
+    );
+
+    expect($recursiveFiles)->toHaveCount(1);
+});
+
+test('list reuses the recursive file listing for directory sizes', function () {
+    $files = new ProcessResult(0, "50\tdocs/guide.txt\n30\tdocs/old.txt\n", '');
+    $dirs = new ProcessResult(0, "-1\tdocs/\n-1\tdocs/archive/\n", '');
+
+    [$driver, $process] = rclone_driver_fixture([
+        FakeRcloneProcess::keyFor(['lsf', '-R', '--files-only', '--format', 'sp', '--separator', "\t"]) => $files,
+        FakeRcloneProcess::keyFor(['lsf', '-R', '--dirs-only', '--format', 'sp', '--separator', "\t"]) => $dirs,
+    ]);
+
+    $result = $driver->list(
+        StoragePath::fromString('rem:bucket/dir/'),
+        recursive: true,
+        directories: true,
+        files: true,
+        withDirectorySizes: true,
+    );
+
+    $byName = [];
+
+    foreach ($result->entries as $entry) {
+        $byName[$entry->name] = $entry;
+    }
+
+    expect($byName['docs']->size)->toBe(80)
+        ->and($byName['archive']->size)->toBe(0);
+
+    // The recursive file pass already carries every size, so no third call.
+    expect($process->callsFor('lsf'))->toHaveCount(2);
+});
+
 test('copy reports the counts rclone actually recorded', function () {
     [$driver, $process] = rclone_driver_fixture([
         'copy' => new ProcessResult(0, '', rclone_stats_line([
@@ -139,6 +227,27 @@ test('move issues a single rclone move for a prefix', function () {
         ->and($move)->toContain('--delete-empty-src-dirs')
         ->and($process->commandFor('copy'))->toBeNull()
         ->and($process->commandFor('delete'))->toBeNull();
+});
+
+test('delete preview runs one dry-run rclone delete and reports the count', function () {
+    [$driver, $process] = rclone_driver_fixture([
+        'delete' => new ProcessResult(0, '', rclone_stats_line([
+            'deletes' => 4370, 'transfers' => 0, 'checks' => 0, 'errors' => 0, 'bytes' => 0, 'totalBytes' => 0,
+        ])),
+    ]);
+
+    $result = $driver->delete(
+        StoragePath::fromString('rem:bucket/dir/'),
+        new TransferOptions(dryRun: true),
+    );
+
+    $delete = $process->commandFor('delete');
+
+    expect($result->status)->toBe(TransferStatus::Success)
+        ->and($result->copied)->toBe(4370)
+        ->and($process->callsFor('delete'))->toHaveCount(1)
+        ->and($delete)->toContain('--dry-run')
+        ->and($delete)->toContain('rem:bucket/dir/');
 });
 
 test('a verified move does not report its own checks as skips', function () {

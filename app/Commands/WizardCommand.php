@@ -127,7 +127,7 @@ terminal. Interactive and non-interactive flows share the same services.
         }
 
         if ($profile === null) {
-            $this->error(sprintf('Configuration "%s" not found.', $name));
+            $this->renderError(sprintf('Configuration "%s" not found.', $name));
 
             return false;
         }
@@ -158,7 +158,7 @@ terminal. Interactive and non-interactive flows share the same services.
                 ],
             );
 
-            $this->line(sprintf('Saved configuration <info>%s</info>.', $name));
+            $this->renderSuccess(sprintf('Saved configuration %s.', $name));
         } catch (\Throwable $e) {
             $this->renderError('Could not save configuration: '.$e->getMessage());
         }
@@ -315,7 +315,7 @@ terminal. Interactive and non-interactive flows share the same services.
         $progress = $this->confirm('Show live progress?', false);
 
         $this->newLine();
-        $this->line('  <comment>Plan:</comment> '.$command.' '.$source.' -> '.$destination);
+        $this->renderDetail('Plan', $command.' '.$source.' -> '.$destination);
 
         if (! $dryRun && ! $this->confirm('Run operation?', true)) {
             $this->line('Cancelled.');

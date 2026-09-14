@@ -7,7 +7,6 @@ namespace App\Commands;
 use App\Commands\Concerns\HandlesStorageErrors;
 use App\DTOs\StoragePath;
 use App\DTOs\TransferOptions;
-use App\DTOs\TransferResult;
 use App\Exceptions\ObjectNotFoundException;
 use App\Exceptions\StorageException;
 use App\Services\StorageService;
@@ -57,9 +56,28 @@ preview the scope without deleting anything.';
                 throw new ObjectNotFoundException(sprintf('Nothing found at: %s', $path->toDisplayString()));
             }
 
+            // A dry run previews by actually running the deletion in dry-run
+            // mode: one parallel rclone pass that reports the numbers it would
+            // remove, with no up-front full listing. Counting from a listing
+            // first only to have the deletion list the prefix again doubles the
+            // work on a large prefix, and rclone's own count is more accurate.
+            if ($dryRun) {
+                $this->renderOperationHeader('DELETE', true);
+                $this->renderDetail('Path', $path->toDisplayString());
+
+                $options = new TransferOptions(dryRun: true, verbose: (bool) $this->option('verbose'));
+
+                return $this->renderTransfer(
+                    $this->storage->driverFor($path)->delete($path, $options),
+                    'Deleted',
+                    'deleted',
+                    dryRun: true,
+                );
+            }
+
             [$count, $size] = $this->scopeFor($path);
 
-            $this->renderOperationHeader('DELETE', $dryRun);
+            $this->renderOperationHeader('DELETE');
             $this->renderDetail('Path', $path->toDisplayString());
             $this->renderDetail('Objects', $count === null ? 'unknown' : (string) $count);
 
@@ -67,7 +85,7 @@ preview the scope without deleting anything.';
                 $this->renderDetail('Total size', SizeFormatter::human($size));
             }
 
-            if (! $force && ! $dryRun && $count !== 0) {
+            if (! $force && $count !== 0) {
                 $this->newLine();
 
                 $confirmed = $this->confirm(sprintf('Delete %s object(s). Continue?', $count ?? 'these'), false);
@@ -79,11 +97,8 @@ preview the scope without deleting anything.';
                 }
             }
 
-            if ($dryRun) {
-                return $this->renderTransfer(TransferResult::success($count ?? 0, source: $path), 'Deleted', 'deleted', dryRun: true);
-            }
-
-            $result = $this->storage->driverFor($path)->delete($path, new TransferOptions(verbose: (bool) $this->option('verbose')));
+            $options = new TransferOptions(verbose: (bool) $this->option('verbose'));
+            $result = $this->storage->driverFor($path)->delete($path, $options);
 
             return $this->renderTransfer($result, 'Deleted', 'deleted');
         } catch (\Throwable $exception) {

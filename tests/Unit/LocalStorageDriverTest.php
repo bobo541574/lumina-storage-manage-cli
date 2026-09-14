@@ -69,6 +69,49 @@ test('lists a single file path as one entry', function () {
     }
 });
 
+test('lists each directory recursive total size when requested', function () {
+    $base = local_fixture_base();
+    mkdir($base.'/sub/nested', 0o777, true);
+    file_put_contents($base.'/top.txt', 'top');
+    file_put_contents($base.'/sub/a.txt', 'a');
+    file_put_contents($base.'/sub/nested/b.txt', str_repeat('x', 100));
+
+    try {
+        $sizes = [];
+
+        foreach (local_driver()->list(local_path($base), recursive: true, directories: true, files: true, withDirectorySizes: true)->entries as $entry) {
+            if ($entry->isDirectory) {
+                $sizes[$entry->path] = $entry->size;
+            }
+        }
+
+        expect($sizes)->toMatchArray(['sub' => 101, 'sub/nested' => 100]);
+    } finally {
+        remove_tree_lsd($base);
+    }
+});
+
+test('a directory size is zero when no size was requested', function () {
+    $base = local_fixture_base();
+    mkdir($base.'/sub', 0o777, true);
+    file_put_contents($base.'/sub/a.txt', str_repeat('x', 100));
+
+    try {
+        $result = local_driver()->list(local_path($base), recursive: false, directories: true, files: true);
+        $dir = null;
+
+        foreach ($result->entries as $entry) {
+            if ($entry->isDirectory) {
+                $dir = $entry;
+            }
+        }
+
+        expect($dir->size)->toBe(0);
+    } finally {
+        remove_tree_lsd($base);
+    }
+});
+
 test('lists a missing path with source-not-found semantics', function () {
     $base = local_fixture_base();
 
@@ -226,6 +269,24 @@ test('delete removes a nested directory tree', function () {
         $result = local_driver()->delete(local_path($base.'/nested'));
         expect($result->copied)->toBe(2)
             ->and(is_dir($base.'/nested'))->toBeFalse();
+    } finally {
+        remove_tree_lsd($base);
+    }
+});
+
+test('delete dry run counts the files but removes nothing', function () {
+    $base = local_fixture_base();
+    mkdir($base.'/nested/deep', 0o777, true);
+    file_put_contents($base.'/nested/a.txt', 'a');
+    file_put_contents($base.'/nested/deep/b.txt', 'b');
+
+    try {
+        $result = local_driver()->delete(local_path($base.'/nested'), new TransferOptions(dryRun: true));
+        expect($result->status)->toBe(TransferStatus::Success)
+            ->and($result->copied)->toBe(2)
+            ->and(is_dir($base.'/nested'))->toBeTrue()
+            ->and(file_exists($base.'/nested/a.txt'))->toBeTrue()
+            ->and(file_exists($base.'/nested/deep/b.txt'))->toBeTrue();
     } finally {
         remove_tree_lsd($base);
     }

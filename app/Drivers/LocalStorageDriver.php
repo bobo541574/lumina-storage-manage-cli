@@ -35,7 +35,7 @@ final class LocalStorageDriver implements StorageDriver
         return true;
     }
 
-    public function list(StoragePath $path, bool $recursive = false, bool $directories = true, bool $files = true): ListingResult
+    public function list(StoragePath $path, bool $recursive = false, bool $directories = true, bool $files = true, bool $withDirectorySizes = false): ListingResult
     {
         $absolute = $this->absolute($path);
 
@@ -50,6 +50,8 @@ final class LocalStorageDriver implements StorageDriver
         }
 
         $entries = [];
+
+        $dirSizes = $directories && $withDirectorySizes ? $this->directorySizes($absolute) : [];
 
         $iterator = $recursive
             ? new RecursiveIteratorIterator(
@@ -73,16 +75,47 @@ final class LocalStorageDriver implements StorageDriver
                 continue;
             }
 
+            $relative = $this->relativePath($absolute, $item->getPathname());
+
             $entries[] = new ListingEntry(
                 name: $item->getFilename(),
-                path: $this->relativePath($absolute, $item->getPathname()),
-                size: $isDirectory ? 0 : (int) $item->getSize(),
+                path: $relative,
+                size: $isDirectory ? ($dirSizes[$relative] ?? 0) : (int) $item->getSize(),
                 isDirectory: $isDirectory,
                 isFile: ! $isDirectory,
             );
         }
 
         return new ListingResult($entries);
+    }
+
+    /**
+     * Total size of every file stored under a directory, per relative
+     * directory prefix (a full recursive walk; used for --size on list).
+     *
+     * @return array<string, int> relative directory path => bytes
+     */
+    private function directorySizes(string $absolute): array
+    {
+        $sizes = [];
+
+        $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($absolute, FilesystemIterator::SKIP_DOTS));
+
+        foreach ($iterator as $item) {
+            if ($item->isDir()) {
+                continue;
+            }
+
+            $size = (int) $item->getSize();
+            $dir = dirname($this->relativePath($absolute, $item->getPathname()));
+
+            while ($dir !== '.' && $dir !== '/') {
+                $sizes[$dir] = ($sizes[$dir] ?? 0) + $size;
+                $dir = dirname($dir);
+            }
+        }
+
+        return $sizes;
     }
 
     public function exists(StoragePath $path): bool
@@ -287,6 +320,19 @@ final class LocalStorageDriver implements StorageDriver
 
         if (! file_exists($target)) {
             $result = TransferResult::success(0, source: $path);
+            $this->log($result, 'delete', $path, null, $options);
+
+            return $result;
+        }
+
+        // A dry run previews by counting what would be removed rather than by
+        // a separate listing that the real deletion would repeat.
+        if ($options->dryRun) {
+            $count = is_dir($target) && ! is_link($target)
+                ? $this->countFiles($target)
+                : (is_file($target) ? 1 : 0);
+
+            $result = TransferResult::success($count, source: $path);
             $this->log($result, 'delete', $path, null, $options);
 
             return $result;

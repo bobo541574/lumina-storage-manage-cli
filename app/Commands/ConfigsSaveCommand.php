@@ -47,7 +47,7 @@ with `storage wizard --config=<name>`.';
         $operation = $this->option('operation');
 
         if ($operation !== null && ! in_array($operation, self::OPERATIONS, true)) {
-            $this->error(sprintf('Unknown operation "%s". Allowed: %s.', $operation, implode(', ', self::OPERATIONS)));
+            $this->renderError(sprintf('Unknown operation "%s". Allowed: %s.', $operation, implode(', ', self::OPERATIONS)));
 
             return ExitCode::INVALID;
         }
@@ -87,7 +87,7 @@ with `storage wizard --config=<name>`.';
             return ExitCode::FAILURE;
         }
 
-        $this->line(sprintf('Saved configuration <info>%s</info> (operation: %s).', $config->name, $config->operation ?? 'none'));
+        $this->renderSuccess(sprintf('Saved configuration %s (operation: %s).', $config->name, $config->operation ?? 'none'));
 
         return ExitCode::SUCCESS;
     }

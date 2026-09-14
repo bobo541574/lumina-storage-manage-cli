@@ -39,8 +39,10 @@ remotes with `remotes:add` and `remotes:forget`.';
             return ExitCode::FAILURE;
         }
 
+        $this->renderOperationHeader('REMOTES');
+
         if ($names === []) {
-            $this->line('No remotes configured.');
+            $this->renderInfo('No remotes configured.');
 
             return ExitCode::SUCCESS;
         }

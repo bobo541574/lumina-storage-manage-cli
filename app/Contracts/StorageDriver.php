@@ -28,8 +28,11 @@ interface StorageDriver
     /**
      * List the contents of a path. The path is expected to target a
      * directory/prefix. Directories and files can be filtered independently.
+     *
+     * With $withDirectorySizes, each directory entry carries the total size of
+     * every object stored under it (a recursive sum), not just its children.
      */
-    public function list(StoragePath $path, bool $recursive = false, bool $directories = true, bool $files = true): ListingResult;
+    public function list(StoragePath $path, bool $recursive = false, bool $directories = true, bool $files = true, bool $withDirectorySizes = false): ListingResult;
 
     /**
      * Whether an object/file/prefix exists at the given path.

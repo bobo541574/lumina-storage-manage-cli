@@ -22,7 +22,7 @@ final readonly class ListingResult
     public function totalSize(): int
     {
         return array_sum(array_map(
-            static fn (ListingEntry $entry): int => $entry->size,
+            static fn (ListingEntry $entry): int => $entry->isDirectory ? 0 : $entry->size,
             $this->entries,
         ));
     }

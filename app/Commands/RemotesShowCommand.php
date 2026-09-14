@@ -47,7 +47,10 @@ output. Credentials never leave the rclone config.';
             return ExitCode::FAILURE;
         }
 
-        $this->line(trim($config));
+        $this->renderOperationHeader('REMOTE CONFIG');
+        $this->renderDetail('Remote', $name);
+        $this->newLine();
+        $this->line(preg_replace('/^/m', '  ', trim($config)));
 
         return ExitCode::SUCCESS;
     }

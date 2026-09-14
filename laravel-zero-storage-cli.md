@@ -675,7 +675,7 @@ Transfer option defaults come from `config('storage.defaults')` and are set as S
 
 | Command | Name / Aliases | Description |
 |---------|----------------|-------------|
-| `ListCommand` | `list` | List objects/dirs. `--type all/dirs/files`, `--recursive` (`-R`), `--sort-dir`/`--sort-file` (asc/desc/size/size-desc). SUMMARY line with counts + total size. |
+| `ListCommand` | `list` | List objects/dirs. `--type all/dirs/files`, `--recursive` (`-R`), `--size` (each directory's recursive total; one extra `lsf -R` pass when not already recursive), `--sort-dir`/`--sort-file` (asc/desc/size/size-desc). SUMMARY line with counts + total file bytes (directory sizes are not double-counted). |
 | `CopyCommand` | `copy` | Non-destructive copy. `--transfers/--retries/--dry-run/--overwrite/--progress/--acl/--queue`. |
 | `CopyToCommand` | `copy-to` | Alias of copy (queues as `'copy'`). |
 | `MoveCommand` | `move` | copy → verify → delete source. Same options as copy. |

@@ -39,8 +39,10 @@ transfers can be replayed or preloaded into the wizard with --config.';
             return ExitCode::FAILURE;
         }
 
+        $this->renderOperationHeader('CONFIGS');
+
         if ($configs->isEmpty()) {
-            $this->line('No saved configurations.');
+            $this->renderInfo('No saved configurations.');
 
             return ExitCode::SUCCESS;
         }

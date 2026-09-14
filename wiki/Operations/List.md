@@ -30,6 +30,9 @@ storage list remote:bucket/dir/ --sort-dir size-desc --sort-file asc
 
 # Sort files smallest → largest
 storage list remote:bucket/dir/ --sort-file size
+
+# Show each directory's recursive total size
+storage list remote:bucket/dir/ --size
 ```
 
 ## Options
@@ -38,6 +41,7 @@ storage list remote:bucket/dir/ --sort-file size
 | --- | --- |
 | `--type=TYPE` | `all` (default), `dirs`, or `files` |
 | `-R`, `--recursive` | List recursively |
+| `--size` | Show the total size of each directory |
 | `--sort-dir=SORT` | `asc` (default), `desc`, `size`, `size-desc` |
 | `--sort-file=SORT` | `asc` (default), `desc`, `size`, `size-desc` |
 
@@ -51,6 +55,11 @@ rather than silently returning an empty listing.
   missing prefix are indistinguishable, so both report the same way.
 - **Empty local directory** → lists `(empty)` and exits `0`.
 - The listing ends with a `SUMMARY` line showing file/dir counts and total size.
+- `--size` prints each directory's **recursive** total (every object under it),
+  which is why `--sort-dir size` becomes useful with it. rclone reports no
+  directory size directly, so this costs one full walk of the tree — one extra
+  `rclone lsf -R` pass, or none at all when the listing is already recursive.
+  Leave it off for directory listings that only need to be fast.
 
 ## Related
 

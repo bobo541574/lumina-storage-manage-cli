@@ -39,12 +39,12 @@ class ConfigsForgetCommand extends Command
         }
 
         if ($deleted === 0) {
-            $this->error(sprintf('Configuration "%s" not found.', $name));
+            $this->renderError(sprintf('Configuration "%s" not found.', $name));
 
             return ExitCode::SOURCE_NOT_FOUND;
         }
 
-        $this->line(sprintf('Configuration <info>%s</info> deleted.', $name));
+        $this->renderSuccess(sprintf('Configuration %s deleted.', $name));
 
         return ExitCode::SUCCESS;
     }

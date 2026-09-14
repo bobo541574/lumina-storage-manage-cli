@@ -37,12 +37,12 @@ class StorageService
      *
      * @param  string  $type  all|dirs|files
      */
-    public function list(StoragePath $path, bool $recursive = false, string $type = 'all'): ListingResult
+    public function list(StoragePath $path, bool $recursive = false, string $type = 'all', bool $withDirectorySizes = false): ListingResult
     {
         $includeDirs = $type === 'all' || $type === 'dirs';
         $includeFiles = $type === 'all' || $type === 'files';
 
-        return $this->driverFor($path)->list($path, $recursive, $includeDirs, $includeFiles);
+        return $this->driverFor($path)->list($path, $recursive, $includeDirs, $includeFiles, $withDirectorySizes);
     }
 
     public function exists(StoragePath $path): bool

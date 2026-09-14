@@ -57,8 +57,8 @@ Certificates and secrets are stored by rclone in its own config
             return ExitCode::FAILURE;
         }
 
-        $this->line(sprintf(
-            'Configured remote <info>%s</info> (type: <info>%s</info>).',
+        $this->renderSuccess(sprintf(
+            'Configured remote %s (type: %s).',
             $name,
             $type,
         ));

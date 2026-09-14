@@ -27,11 +27,11 @@ test('delete removes all objects under a prefix with force', function () {
         ->and(file_exists($dir.'/nested/b.txt'))->toBeFalse();
 });
 
-test('delete dry run removes nothing', function () {
+test('delete dry run reports the scope without removing anything', function () {
     [$dir] = delete_fixture();
 
     $this->artisan('delete', ['path' => $dir.'/', '--dry-run' => true])
-        ->expectsOutputToContain('No changes made')
+        ->expectsOutputToContain('Would delete 2 objects')
         ->assertExitCode(0);
 
     expect(file_exists($dir.'/a.txt'))->toBeTrue()

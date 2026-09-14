@@ -103,8 +103,9 @@ trait HandlesStorageErrors
 
         $id = app(Queue::class)->push($job);
 
-        $this->line(sprintf(
-            'Queued <info>%s</info>: %s -> %s%s',
+        $this->newLine();
+        $this->renderInfo(sprintf(
+            'Queued %s: %s -> %s%s',
             $operation,
             $source->toDisplayString(),
             $destination->toDisplayString(),
@@ -151,7 +152,7 @@ trait HandlesStorageErrors
     {
         $this->clearProgress();
 
-        if ($result->total() === 0) {
+        if ($result->total() === 0 && $result->status === TransferStatus::Success) {
             $this->newLine();
 
             // Nothing to do is an ordinary outcome, not a simulation and not a
@@ -174,15 +175,28 @@ trait HandlesStorageErrors
             $this->newLine();
             $this->renderDryRun($message);
 
-            return ExitCode::SUCCESS;
+            // A dry run can fail too (an unreadable object while listing), and
+            // that is a signal — report the failures and the exit code, not a
+            // clean success.
+            $this->renderErrorList($result->errors);
+
+            return match ($result->status) {
+                TransferStatus::Success => ExitCode::SUCCESS,
+                TransferStatus::Partial => ExitCode::PARTIAL,
+                TransferStatus::Failed => ExitCode::FAILURE,
+            };
         }
 
         $this->newLine();
 
         $verb = $this->pastToPresent($pastVerb);
 
-        if ($result->failed > 0) {
-            $this->renderFailed(sprintf(
+        // One status badge per run: a partial result renders PARTIAL even
+        // though it also has failed counts, and a failure renders FAILED — never
+        // both. The old code re-badged the status after the result line, so a
+        // partial run flashed red then yellow.
+        if ($result->status !== TransferStatus::Success) {
+            $message = sprintf(
                 '%s %d, skipped %d, failed %d object%s.%s',
                 ucfirst($verb),
                 $result->copied,
@@ -190,7 +204,11 @@ trait HandlesStorageErrors
                 $result->failed,
                 $result->failed === 1 ? '' : 's',
                 $this->timing(),
-            ));
+            );
+
+            $result->status === TransferStatus::Partial
+                ? $this->renderPartial($message)
+                : $this->renderFailed($message);
         } elseif ($result->skipped > 0) {
             $this->renderSuccess(sprintf(
                 '%s %d, skipped %d object%s.%s',
@@ -214,8 +232,8 @@ trait HandlesStorageErrors
 
         return match ($result->status) {
             TransferStatus::Success => ExitCode::SUCCESS,
-            TransferStatus::Partial => $this->partialExit(),
-            TransferStatus::Failed => $this->failedExit(),
+            TransferStatus::Partial => ExitCode::PARTIAL,
+            TransferStatus::Failed => ExitCode::FAILURE,
         };
     }
 
@@ -294,22 +312,6 @@ trait HandlesStorageErrors
         $this->renderOperationHeader($operation, $dryRun);
         $this->renderDetail('Source', $source->toDisplayString());
         $this->renderDetail('Destination', $destination->toDisplayString());
-    }
-
-    private function partialExit(): int
-    {
-        $this->newLine();
-        $this->renderPartial('Operation completed with errors.');
-
-        return ExitCode::PARTIAL;
-    }
-
-    private function failedExit(): int
-    {
-        $this->newLine();
-        $this->renderFailed('Operation failed.');
-
-        return ExitCode::FAILURE;
     }
 
     private function infinitiveFor(string $pastVerb): string

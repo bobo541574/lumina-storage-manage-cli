@@ -23,6 +23,22 @@ test('list command shows a local directory with files and sub-directories', func
     }
 });
 
+test('list --size shows a directory total and keeps the summary to file bytes', function () {
+    $dir = sys_get_temp_dir().'/storage-list-'.bin2hex(random_bytes(4));
+    mkdir($dir.'/sub', 0o777, true);
+    file_put_contents($dir.'/alpha.txt', str_repeat('a', 2048));
+    file_put_contents($dir.'/sub/beta.txt', str_repeat('b', 2048));
+
+    try {
+        $this->artisan('list', ['path' => $dir, '--size' => true])
+            ->expectsOutputToContain('2.0K  sub/')
+            ->expectsOutputToContain('1 file · 2.0K')
+            ->assertExitCode(0);
+    } finally {
+        rrmdir($dir);
+    }
+});
+
 test('list command lists recursively', function () {
     $dir = sys_get_temp_dir().'/storage-list-'.bin2hex(random_bytes(4));
     mkdir($dir.'/nested/deeper', 0o777, true);
